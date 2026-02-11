@@ -12,23 +12,60 @@ class LLMClient:
     def __init__(self):
         """
         通用大模型客户端
-        自动读取环境变量 (LLM_API_KEY, LLM_BASE_URL, LLM_MODEL)
+        使用通用三元组进行配置：
+        - LLM_API_KEY     通用大模型 Key（可以是 OpenAI / DeepSeek / Moonshot 等）
+        - LLM_BASE_URL    通用大模型 Base URL
+        - LLM_MODEL       通用大模型名称
+
+        约定：
+        - 如果你只想用 OpenAI，则在 .env 中设置：
+            LLM_API_KEY=你的OpenAIKey
+            LLM_BASE_URL=https://api.openai.com/v1
+            LLM_MODEL=o3-mini
+          如果不设置 LLM_MODEL，则默认使用 o3-mini。
         """
-        self.api_key = os.getenv('LLM_API_KEY')
-        self.base_url = os.getenv('LLM_BASE_URL')
-        self.model = os.getenv('LLM_MODEL')
-
+        # 1) 读取通用大模型 Key
+        self.api_key = os.getenv("LLM_API_KEY")
         if not self.api_key:
-            raise ValueError("❌ 未找到 LLM_API_KEY，请检查 .env 文件")
+            raise ValueError("❌ 未找到 LLM_API_KEY，请在 .env 中配置通用大模型的 Key。")
 
-        # 【关键】强制直连设置 (解决 VPN 连接问题)
+        # 2) 读取 Base URL，未配置时默认指向 OpenAI
+        self.base_url = (
+            os.getenv("LLM_BASE_URL")
+            or "https://api.openai.com/v1"
+        )
+
+        # 3) 读取模型名称，默认使用 o3-mini（满足“翻译调用 o3-mini”的需求）
+        #    同时对环境变量做一层“白名单校验”，如果填了不支持的值（例如 GPT），则自动回落到 o3-mini，
+        #    避免出现你截图里的 model_not_found 错误。
+        env_model = os.getenv("LLM_MODEL")
+        # 允许的模型名称列表（根据你 .env 里的注释扩展）
+        allowed_models = {
+            "o3-mini",
+            "gpt-4o-mini",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-5",
+        }
+        if env_model and env_model.lower() in {m.lower() for m in allowed_models}:
+            # 如果用户配置在白名单中，就按用户配置来（大小写不敏感）
+            # 为保持与接口一致，这里再从 allowed_models 中找出规范写法
+            for m in allowed_models:
+                if env_model.lower() == m.lower():
+                    self.model = m
+                    break
+        else:
+            # 否则一律回落为 o3-mini
+            self.model = "o3-mini"
+
+        # 【关键】针对某些国内转发服务，设置直连白名单
         if self.base_url and ("deepseek" in self.base_url or "moonshot" in self.base_url):
-            os.environ['NO_PROXY'] = 'api.deepseek.com,api.moonshot.cn'
+            os.environ["NO_PROXY"] = "api.deepseek.com,api.moonshot.cn"
 
-        # 初始化客户端
+        # 4) 初始化客户端
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
         )
 
     def get_completion(self, prompt, system_prompt="You are a helpful assistant"):

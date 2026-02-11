@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 
-# 加载环境配置
+# Load Environment Variables
 load_dotenv()
 
 st.set_page_config(
@@ -11,22 +11,22 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧠 DeepGloss 学习助手")
+st.title("🧠 DeepGloss Learning Assistant")
 
 st.markdown("""
-### 欢迎使用 DeepGloss
-这是一个垂直领域的英语学习工具。
+### Welcome to DeepGloss
+A domain-specific English learning tool tailored for your specific needs.
 
-请从左侧侧边栏选择功能：
-- **import_data**: 导入词汇和文章
-- **study_mode**: 开始学习
+Please select a function from the sidebar:
+- **import_data**: Import your vocabulary and sentences
+- **study_mode**: Start studying
 """)
 
-# 检查环境变量
+# Check API Key
 api_key = os.getenv("LLM_API_KEY")
 
 if not api_key:
-    st.warning("⚠️ 未检测到 .env 文件中的 LLM_API_KEY")
-    st.info("请在项目根目录创建 .env 文件，并配置 LLM_API_KEY, LLM_BASE_URL, LLM_MODEL")
+    st.warning("⚠️ LLM_API_KEY not found in the .env file.")
+    st.info("Please create a .env file in the project root and configure LLM_API_KEY, LLM_BASE_URL, and LLM_MODEL.")
 else:
-    st.success("✅ API 环境已就绪")
+    st.success("✅ API Environment is properly configured and ready.")

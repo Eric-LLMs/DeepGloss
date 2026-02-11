@@ -7,11 +7,20 @@ import streamlit as st
 
 class TTSManager:
     def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            api_key = st.session_state.get("openai_api_key")
+        """
+        TTS 管理类
+        优先使用以下顺序获取用于 TTS 的 Key：
+        1. 环境变量 OPENAI_API_KEY
+        2. 环境变量 LLM_API_KEY （与你配置通用大模型的 Key 复用，减少配置成本）
+        3. Streamlit session_state 中的 openai_api_key（兼容旧版手动输入）
+        """
+        api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or os.getenv("LLM_API_KEY")
+            or st.session_state.get("openai_api_key")
+        )
 
-        # 👇 关键修改：传入 base_url
+        # 👇 关键修改：传入 base_url（来自 config.OPENAI_BASE_URL，可指向官方或你的转发服务）
         if api_key:
             self.client = OpenAI(
                 api_key=api_key,
@@ -36,7 +45,7 @@ class TTSManager:
 
         # 3. 调用 API 生成
         if not self.client:
-            st.warning("⚠️ 未配置 OpenAI API Key，无法生成语音。请在侧边栏或 .env 文件中配置。")
+            st.warning("⚠️ 未配置用于 TTS 的 API Key（OPENAI_API_KEY 或 LLM_API_KEY），无法生成语音。请在 .env 中配置。")
             return None
 
         try:

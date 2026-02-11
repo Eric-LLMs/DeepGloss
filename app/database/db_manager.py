@@ -6,7 +6,6 @@ CURRENT_DIR = Path(__file__).parent
 DB_PATH = CURRENT_DIR.parent.parent / "data" / "deepgloss.db"
 SCHEMA_PATH = CURRENT_DIR / "schema.sql"
 
-
 class DBManager:
     def __init__(self):
         if not DB_PATH.parent.exists():
@@ -20,6 +19,25 @@ class DBManager:
         if SCHEMA_PATH.exists():
             with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
                 self.conn.executescript(f.read())
+
+        # 自动升级旧数据库：增加新字段，静默处理已存在的错误
+        try:
+            self.conn.execute("ALTER TABLE sentences ADD COLUMN cn_explanation TEXT")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            self.conn.execute("ALTER TABLE terms ADD COLUMN frequency INTEGER DEFAULT 1")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            self.conn.execute("ALTER TABLE terms ADD COLUMN star_level INTEGER DEFAULT 1")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
     # --- 1. Domain ---
     def add_domain(self, name):
@@ -36,27 +54,25 @@ class DBManager:
         return self.conn.execute("SELECT id, name FROM domain").fetchall()
 
     # --- 2. Terms ---
-    def add_term(self, domain_id, word, definition="", frequency=0):
-        # 1. 检查是否存在
+    def add_term(self, domain_id, word, definition="", frequency=1, star_level=1):
+        """防重复添加：如果同 Domain 下存在该词（忽略大小写），直接跳过"""
         cursor = self.conn.execute(
-            "SELECT id FROM terms WHERE domain_id=? AND word=?", (domain_id, word)
+            "SELECT id FROM terms WHERE domain_id=? AND LOWER(word)=LOWER(?)", (domain_id, word)
         )
         res = cursor.fetchone()
 
-        # 2. 如果存在，更新词频 (取较大的那个)
         if res:
+            # 已经存在，直接返回已存在词的 ID，不重复导入
             term_id = res['id']
-            # 可选：如果新导入的词频更高，就更新它
-            if frequency > 0:
-                self.conn.execute("UPDATE terms SET frequency=? WHERE id=? AND frequency<?",
-                                  (frequency, term_id, frequency))
-                self.conn.commit()
+            # 如果想在重复导入时累加词频，可以取消注释下面的代码
+            # self.conn.execute("UPDATE terms SET frequency=frequency+? WHERE id=?", (frequency, term_id))
+            # self.conn.commit()
             return term_id
 
-        # 3. 如果不存在，插入新词
+        # 不存在则插入
         cursor = self.conn.execute(
-            "INSERT INTO terms (domain_id, word, definition, frequency) VALUES (?, ?, ?, ?)",
-            (domain_id, word, definition, frequency)
+            "INSERT INTO terms (domain_id, word, definition, frequency, star_level) VALUES (?, ?, ?, ?, ?)",
+            (domain_id, word, definition, frequency, star_level)
         )
         self.conn.commit()
         return cursor.lastrowid
@@ -67,12 +83,14 @@ class DBManager:
     def get_term_by_id(self, term_id):
         return self.conn.execute("SELECT * FROM terms WHERE id=?", (term_id,)).fetchone()
 
-    def update_term_info(self, term_id, definition=None, audio_path=None):
-        """更新词汇的定义或音频路径"""
-        if definition:
+    def update_term_info(self, term_id, definition=None, audio_path=None, star_level=None):
+        """更新词汇的定义、音频路径或星级"""
+        if definition is not None:
             self.conn.execute("UPDATE terms SET definition=? WHERE id=?", (definition, term_id))
-        if audio_path:
+        if audio_path is not None:
             self.conn.execute("UPDATE terms SET audio_hash=? WHERE id=?", (audio_path, term_id))
+        if star_level is not None:
+            self.conn.execute("UPDATE terms SET star_level=? WHERE id=?", (star_level, term_id))
         self.conn.commit()
 
     # --- 3. Sentences ---
@@ -85,23 +103,18 @@ class DBManager:
         except sqlite3.IntegrityError:
             return self.conn.execute("SELECT id FROM sentences WHERE content_en=?", (content,)).fetchone()['id']
 
-    def update_sentence_info(self, sent_id, content_cn=None, audio_path=None):
-        """更新句子的翻译或音频路径"""
-        if content_cn:
+    def update_sentence_info(self, sent_id, content_cn=None, audio_path=None, cn_explanation=None):
+        if content_cn is not None:
             self.conn.execute("UPDATE sentences SET content_cn=? WHERE id=?", (content_cn, sent_id))
-        if audio_path:
+        if audio_path is not None:
             self.conn.execute("UPDATE sentences SET audio_hash=? WHERE id=?", (audio_path, sent_id))
+        if cn_explanation is not None:
+            self.conn.execute("UPDATE sentences SET cn_explanation=? WHERE id=?", (cn_explanation, sent_id))
         self.conn.commit()
 
-    # --- 4. Search & Matches (核心逻辑升级) ---
-
+    # --- 4. Search & Matches ---
     def search_sentences_by_text(self, domain_id, term_text):
-        """
-        动态文本匹配：在指定 Domain 下，查找包含 term_text 的所有句子
-        """
-        # 使用 SQLite 的 LIKE 进行模糊查询，%表示通配符
         query = f"%{term_text}%"
-        # 排除太短的句子，排除已经建立关联的句子(可选，这里先全部查出来)
         sql = """
             SELECT * FROM sentences 
             WHERE domain_id = ? 
@@ -110,15 +123,13 @@ class DBManager:
         return self.conn.execute(sql, (domain_id, query)).fetchall()
 
     def add_match(self, term_id, sentence_id):
-        """建立词和句子的关联"""
         try:
             self.conn.execute("INSERT INTO matches (term_id, sentence_id) VALUES (?, ?)", (term_id, sentence_id))
             self.conn.commit()
         except sqlite3.IntegrityError:
-            pass  # 已经关联过，忽略
+            pass
 
     def get_matches_for_term(self, term_id):
-        """获取已经确认关联的句子"""
         sql = """
             SELECT s.* FROM sentences s
             JOIN matches m ON s.id = m.sentence_id

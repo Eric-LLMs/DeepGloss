@@ -1,221 +1,233 @@
 import streamlit as st
-import os
+import math
 from app.database.db_manager import DBManager
 from app.services.tts_manager import TTSManager
-from app.services.llm_client import LLMClient  # ✅ 1. 改为通用引用
+from app.services.llm_client import LLMClient
+from app.ui.study_dialog import trigger_study_dialog
 
-# --- 初始化 ---
-st.set_page_config(page_title="深度学习模式", layout="wide")
+# --- Initialization ---
+st.set_page_config(page_title="Study Mode", layout="wide")
+
+# 初始化核心服务组件
 db = DBManager()
 tts = TTSManager()
-llm = LLMClient()  # ✅ 2. 通用初始化
+llm = LLMClient()
 
-# --- Session State 管理 ---
-if 'view_mode' not in st.session_state:
-    st.session_state.view_mode = 'list'
-if 'current_term_id' not in st.session_state:
-    st.session_state.current_term_id = None
-
-
-# --- 辅助函数 ---
-def go_to_list():
-    st.session_state.view_mode = 'list'
-    st.session_state.current_term_id = None
+# --- Session State 初始化 (用于排序和分页) ---
+if 'sort_col' not in st.session_state:
+    st.session_state.sort_col = 'word'  # 默认按单词排序
+if 'sort_asc' not in st.session_state:
+    st.session_state.sort_asc = True  # 默认升序
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 1
 
 
-def go_to_detail(term_id):
-    st.session_state.view_mode = 'detail'
-    st.session_state.current_term_id = term_id
+# --- 回调函数 ---
+def reset_pagination():
+    """当切换领域、筛选条件或搜索时，重置回第一页"""
+    st.session_state.current_page = 1
 
 
-# ✅ 3. 新增回调函数 (解决 StreamlitAPIException 的关键)
-# 这个函数会在点击按钮后、页面重新渲染前执行，所以可以安全地修改 session_state
-def ai_parse_callback(word, context, target_key):
-    try:
-        res = llm.explain_term_in_context(word, context)
-        if isinstance(res, dict) and 'translation' in res:
-            # 更新输入框绑定的 key
-            st.session_state[target_key] = res['translation']
-            # 将解释暂存，以便在页面刷新后显示
-            st.session_state[f"msg_{target_key}"] = res['explanation']
-    except Exception as e:
-        st.session_state[f"err_{target_key}"] = str(e)
+def handle_sort(col_name):
+    """处理表头点击排序的逻辑"""
+    if st.session_state.sort_col == col_name:
+        # 如果点击的是当前排序列，切换升降序
+        st.session_state.sort_asc = not st.session_state.sort_asc
+    else:
+        # 如果点击了新列，设为该列并默认升序
+        st.session_state.sort_col = col_name
+        st.session_state.sort_asc = True
+    # 排序改变时，重置到第一页
+    st.session_state.current_page = 1
 
+
+def prev_page():
+    if st.session_state.current_page > 1:
+        st.session_state.current_page -= 1
+
+
+def next_page(total_pages):
+    if st.session_state.current_page < total_pages:
+        st.session_state.current_page += 1
+
+
+# 注入全局 CSS：压缩间距 + 强制垂直居中 + 扁平化表头按钮
+st.markdown("""
+    <style>
+    /* 强制所有列内容垂直居中对齐 */
+    [data-testid="column"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    /* 隐藏 popover 按钮的默认 margin */
+    [data-testid="stPopover"] button {
+        margin: 0 !important;
+    }
+    /* 搜索框微调 */
+    .stTextInput input {
+        border-radius: 8px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ==========================================
-# 视图 1: 词汇列表页
+# Main View: Vocabulary List
 # ==========================================
-if st.session_state.view_mode == 'list':
-    st.title("📚 词汇列表")
+st.markdown("## Vocabulary List")
 
+# 1. 顶部过滤区 (Dropdowns)
+col_filt1, col_filt2 = st.columns(2)
+
+with col_filt1:
     domains = db.get_all_domains()
     if not domains:
-        st.warning("请先去导入数据")
+        st.warning("Please import data first.")
         st.stop()
-
-    d_opts = {d['name']: d['id'] for d in domains}
-    sel_d_name = st.selectbox("选择领域", list(d_opts.keys()))
+    d_opts = {d["name"]: d["id"] for d in domains}
+    sel_d_name = st.selectbox("Select Domain", list(d_opts.keys()), label_visibility="collapsed",
+                              on_change=reset_pagination)
     sel_d_id = d_opts[sel_d_name]
 
-    terms = db.get_terms_by_domain(sel_d_id)
-    if not terms:
-        st.info("该领域下暂无词汇")
-        st.stop()
+with col_filt2:
+    star_filter = st.selectbox(
+        "Filter by Level",
+        ["All Levels", "⭐ 1 Star", "⭐⭐ 2 Stars", "⭐⭐⭐ 3 Stars", "⭐⭐⭐⭐ 4 Stars", "⭐⭐⭐⭐⭐ 5 Stars"],
+        label_visibility="collapsed",
+        on_change=reset_pagination
+    )
 
-    st.markdown("---")
-    for t in terms:
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"### {t['word']}")
-            if t['definition']:
-                st.caption(t['definition'])
-        with col2:
-            if st.button("🚀 学习", key=f"start_{t['id']}", use_container_width=True):
-                go_to_detail(t['id'])
-                st.rerun()
-        st.divider()
+# 2. 搜索框 (实时联动，输入时重置分页)
+st.write("")  # 小间距
+search_term = st.text_input(
+    "Search terms",
+    placeholder="🔍 Search for a term...",
+    label_visibility="collapsed",
+    on_change=reset_pagination
+)
+
+# 3. 从数据库获取数据 (全部获取到内存)
+terms = db.get_terms_by_domain(sel_d_id)
+if not terms:
+    st.info("No vocabulary found in this domain.")
+    st.stop()
+
+# 转换为标准字典列表
+terms = [dict(t) for t in terms]
+
+# 4. 应用 过滤 & 搜索 逻辑
+if star_filter != "All Levels":
+    target_stars = int(star_filter.split(" ")[1])
+    terms = [t for t in terms if t.get('star_level', 1) == target_stars]
+
+if search_term:
+    terms = [t for t in terms if search_term.lower() in t['word'].lower()]
+
+if not terms:
+    st.info("No vocabulary matches the current criteria.")
+    st.stop()
+
+# 5. 应用排序逻辑 (内存排序)
+is_reverse = not st.session_state.sort_asc
+if st.session_state.sort_col == 'word':
+    terms.sort(key=lambda x: x['word'].lower(), reverse=is_reverse)
+elif st.session_state.sort_col == 'freq':
+    terms.sort(key=lambda x: x.get('frequency', 1), reverse=is_reverse)
+elif st.session_state.sort_col == 'level':
+    terms.sort(key=lambda x: x.get('star_level', 1), reverse=is_reverse)
+
+# 6. 分页计算逻辑
+ITEMS_PER_PAGE = 10  # 每页显示的单词数量
+total_items = len(terms)
+total_pages = math.ceil(total_items / ITEMS_PER_PAGE)
+
+# 防止筛选后页码越界
+if st.session_state.current_page > total_pages:
+    st.session_state.current_page = max(1, total_pages)
+
+start_idx = (st.session_state.current_page - 1) * ITEMS_PER_PAGE
+end_idx = start_idx + ITEMS_PER_PAGE
+paginated_terms = terms[start_idx:end_idx]  # 切片拿到当前页的数据
 
 # ==========================================
-# 视图 2: 详细学习页
+# 渲染表头 & 列表区
 # ==========================================
-elif st.session_state.view_mode == 'detail':
-    t_id = st.session_state.current_term_id
-    term_data = db.get_term_by_id(t_id)
-    word = term_data['word']
 
-    if st.button("← 返回列表"):
-        go_to_list()
-        st.rerun()
+st.markdown("<hr style='margin: 0.5em 0; border: none; border-top: 2px solid #e5e7eb;'>", unsafe_allow_html=True)
 
-    st.title(f"🔤 {word}")
+# ✅ 新增：可点击的列名表头 (Headers)
+hc1, hc2, hc3, hc4, hc5 = st.columns([3, 1.5, 1.5, 1.5, 1.5])
 
-    # --- A. 词汇信息区 ---
-    st.subheader("1. 词汇信息")
-    col_t1, col_t2 = st.columns([1, 1])
 
-    with col_t1:
-        st.markdown("**读音 (TTS)**")
-        c1, c2 = st.columns(2)
-        has_local_audio = bool(term_data['audio_hash'])
-        if c1.button("📂 本地", key="t_local", disabled=not has_local_audio):
-            st.audio(term_data['audio_hash'])
+def get_sort_icon(col_name):
+    if st.session_state.sort_col == col_name:
+        return " 🔼" if st.session_state.sort_asc else " 🔽"
+    return ""
 
-        if c2.button("☁️ 在线生成", key="t_online"):
-            with st.spinner("生成中..."):
-                path = tts.get_audio_path(word)
-                if path:
-                    st.session_state[f"new_audio_{t_id}"] = path
-                    st.audio(path)
-                    st.success("已生成")
 
-    with col_t2:
-        st.markdown("**释义 / 翻译**")
-        def_val = st.text_area("释义", value=term_data['definition'] or "", key="term_def_input")
-        if st.button("🧠 AI 自动解释", key="t_explain"):
-            st.info("请使用下方例句的 AI 解析功能")
+with hc1:
+    st.button(f"WORD{get_sort_icon('word')}", key="sort_word", on_click=handle_sort, args=('word',),
+              use_container_width=True, type="tertiary")
+with hc2:
+    st.button(f"FREQUENCY{get_sort_icon('freq')}", key="sort_freq", on_click=handle_sort, args=('freq',),
+              use_container_width=True, type="tertiary")
+with hc3:
+    st.button(f"LEVEL{get_sort_icon('level')}", key="sort_level", on_click=handle_sort, args=('level',),
+              use_container_width=True, type="tertiary")
 
-    st.divider()
+header_text_style = "<div style='color: #374151; font-weight: 600; font-size: 14px; text-align: center; padding-top: 4px;'>{}</div>"
+with hc4:
+    st.markdown(header_text_style.format("DEFINITION"), unsafe_allow_html=True)
+with hc5:
+    st.markdown(header_text_style.format("ACTION"), unsafe_allow_html=True)
 
-    # --- B. 句子匹配区 ---
-    st.subheader("2. 语境例句")
+st.markdown("<hr style='margin: 0.5em 0; border: none; border-top: 1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
-    linked_sents = db.get_matches_for_term(t_id)
-    searched_sents = db.search_sentences_by_text(term_data['domain_id'], word)
+# 7. 渲染当前页的数据行
+for t_dict in paginated_terms:
+    col1, col2, col3, col4, col5 = st.columns([3, 1.5, 1.5, 1.5, 1.5])
 
-    all_sents_map = {s['id']: s for s in linked_sents}
-    saved_ids = set(all_sents_map.keys())
-    for s in searched_sents:
-        if s['id'] not in all_sents_map:
-            all_sents_map[s['id']] = s
-    final_sents = list(all_sents_map.values())
+    with col1:
+        st.markdown(f"**{t_dict['word']}**")
 
-    if not final_sents:
-        st.info("没有找到相关例句。")
+    with col2:
+        freq = t_dict.get('frequency', 1)
+        st.markdown(
+            f"<div style='text-align: center;'><span style='color: #4b5563; font-size: 0.95em;'>🔄 {freq}</span></div>",
+            unsafe_allow_html=True)
 
-    for i, sent in enumerate(final_sents):
-        s_id = sent['id']
-        is_saved = s_id in saved_ids
+    with col3:
+        level = t_dict.get('star_level', 1)
+        st.markdown(f"<div style='text-align: center;'>{'⭐' * level}</div>", unsafe_allow_html=True)
 
-        with st.container(border=True):
-            if is_saved:
-                st.caption("✅ 已关联")
-            else:
-                st.caption("❓ 潜在匹配")
+    with col4:
+        if t_dict["definition"]:
+            with st.popover("📖 View", use_container_width=True):
+                st.markdown(f"**{t_dict['word']}**")
+                st.write(t_dict["definition"])
+        else:
+            st.write("")
 
-            st.markdown(f"**{sent['content_en']}**")
+    with col5:
+        if st.button("⚡ Practice", key=f"start_{t_dict['id']}", use_container_width=True):
+            trigger_study_dialog(t_dict['id'], t_dict['word'], db, tts, llm)
 
-            sc1, sc2 = st.columns([1, 1])
+    st.markdown("<hr style='margin: 0.2em 0; border: none; border-top: 1px solid #f9fafb;'>", unsafe_allow_html=True)
 
-            # S1. 读音
-            with sc1:
-                st.write("🔊 读音")
-                b1, b2 = st.columns(2)
-                s_audio = st.session_state.get(f"new_sent_audio_{s_id}", sent['audio_hash'])
+# ==========================================
+# 8. 底部渲染：分页控制器
+# ==========================================
+st.write("")  # 增加一点空隙
+pc1, pc2, pc3 = st.columns([1, 2, 1])
 
-                if b1.button("📂 播放", key=f"s_play_{s_id}", disabled=not s_audio):
-                    st.audio(s_audio)
+with pc1:
+    st.button("⬅️ Prev", on_click=prev_page, disabled=(st.session_state.current_page == 1), use_container_width=True)
 
-                if b2.button("☁️ 生成", key=f"s_gen_{s_id}"):
-                    with st.spinner("生成中..."):
-                        path = tts.get_audio_path(sent['content_en'])
-                        if path:
-                            st.session_state[f"new_sent_audio_{s_id}"] = path
-                            st.audio(path)
-                            st.rerun()
+with pc2:
+    st.markdown(
+        f"<div style='text-align: center; color: #4b5563; margin-top: 8px;'>Page <b>{st.session_state.current_page}</b> of <b>{total_pages}</b> &nbsp;|&nbsp; Total: {total_items} terms</div>",
+        unsafe_allow_html=True)
 
-            # S2. 翻译 & AI 解析
-            with sc2:
-                st.write("🇨🇳 翻译 & 语境")
-
-                input_key = f"s_cn_input_{s_id}"
-
-                # 初始化输入框的值
-                if input_key not in st.session_state:
-                    st.session_state[input_key] = sent['content_cn'] if sent['content_cn'] else ""
-
-                st.text_area("中文", key=input_key, height=70)
-
-                # ✅ 4. 使用 on_click 绑定回调函数 (彻底解决报错)
-                st.button(
-                    "🧠 AI 解析",
-                    key=f"s_ai_{s_id}",
-                    on_click=ai_parse_callback,
-                    args=(word, sent['content_en'], input_key)
-                )
-
-                # 如果有回调产生的消息，在这里显示
-                if f"msg_{input_key}" in st.session_state:
-                    st.success(f"💡 {st.session_state[f'msg_{input_key}']}")
-                    # 显示一次后清除，避免一直占位 (可选)
-                    # del st.session_state[f"msg_{input_key}"]
-
-                if f"err_{input_key}" in st.session_state:
-                    st.error(st.session_state[f"err_{input_key}"])
-
-    st.divider()
-
-    # --- C. 保存区 ---
-    if st.button("💾 保存所有更改", type="primary", use_container_width=True):
-        updated_count = 0
-
-        new_def = st.session_state.get("term_def_input")
-        new_term_audio = st.session_state.get(f"new_audio_{t_id}")
-        db.update_term_info(t_id, definition=new_def, audio_path=new_term_audio)
-
-        for sent in final_sents:
-            s_id = sent['id']
-            # 从 Key 取值，确保保存的是最新输入
-            user_cn_input = st.session_state.get(f"s_cn_input_{s_id}")
-            new_s_audio = st.session_state.get(f"new_sent_audio_{s_id}")
-
-            if user_cn_input or new_s_audio:
-                db.update_sentence_info(s_id, content_cn=user_cn_input, audio_path=new_s_audio)
-
-            db.add_match(t_id, s_id)
-            updated_count += 1
-
-        st.success(f"✅ 保存成功！更新了 {updated_count} 个句子。")
-        import time
-
-        time.sleep(1)
-        st.rerun()
+with pc3:
+    st.button("Next ➡️", on_click=next_page, args=(total_pages,),
+              disabled=(st.session_state.current_page == total_pages), use_container_width=True)
