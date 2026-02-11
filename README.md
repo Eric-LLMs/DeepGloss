@@ -102,7 +102,7 @@ Ensure you have Python 3.8+ (Recommended: 3.10+) installed on your system.
 Clone the repository to your local machine:
 
 ```bash
-git clone [https://github.com/Eric-LLMs/DeepGloss.git](https://github.com/Eric-LLMs/DeepGloss.git)
+git clone https://github.com/Eric-LLMs/DeepGloss.git
 cd DeepGloss
 
 ```
