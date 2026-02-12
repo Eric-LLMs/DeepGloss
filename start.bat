@@ -1,5 +1,5 @@
 @echo off
 echo Starting DeepGloss...
-call conda activate english_app
+call conda activate DeepGloss
 streamlit run main.py
 pause
