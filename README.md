@@ -37,7 +37,8 @@ Manage domains and easily import customized vocabulary and corpus with intellige
 * **Real-time Search**: Instantly find terms in your current list with a responsive search bar.
 * **Hover Definitions**: Clean UI using popovers to view definitions without leaving the list.
 
-### 🤖 AI-Powered Interactive Study Dialog
+### 🤖 AI-Powered Interactive Study
+* **Seamless Navigation**: Switch instantly between words using **"⬅️ Prev"** and **"Next ➡️"** buttons without closing the dialog, ensuring an uninterrupted learning flow.
 * **Context-Aware Explanations**: Uses LLMs to translate sentences and explain *exactly* what a term means within that specific context.
 * **Auto-Fetch Definitions**: If a term lacks a definition, the system automatically calls the LLM in the background to fetch a precise English definition and Chinese translation.
 * **Audio & Pronunciation**: 

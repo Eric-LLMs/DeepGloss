@@ -4,4 +4,6 @@ pandas
 openpyxl
 dotenv
 streamlit-audiorec
-
+torch
+sentence-transformers
+chromadb
