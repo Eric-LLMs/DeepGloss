@@ -3,11 +3,12 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![ChromaDB](https://img.shields.io/badge/VectorDB-Chroma-orange)](https://www.trychroma.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**DeepGloss** is a smart, domain-specific English learning assistant built with Streamlit and powered by Large Language Models (LLMs). 
+**DeepGloss** is a smart, domain-specific English learning assistant built with Streamlit and powered by Large Language Models (LLMs) and Vector Database technology.
 
-Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to import customized vocabulary and corpus, automatically fetches definitions, generates Text-to-Speech (TTS) audio, provides context-aware AI translations, and offers interactive voice recording for pronunciation comparison.
+Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to import customized vocabulary and corpus, automatically fetches definitions, generates Text-to-Speech (TTS) audio, provides context-aware AI translations, and offers interactive voice recording for pronunciation comparison. Crucially, it features **Hybrid Search (SQL + Vector)** to find relevant example sentences even when exact keywords are missing.
 
 ---
 
@@ -17,19 +18,23 @@ Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** wit
 Seamlessly sort, search, and view inline definitions via hover popovers without leaving the page.
 ![Vocabulary List](screenshots/listpage_demo.png)
 
-**2. Immersive Study Dialog**
-Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, and get AI-powered contextual explanations for sentences.
+**2. Immersive Study Dialog with Hybrid Search**
+Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, and get AI-powered contextual explanations. The system retrieves sentences via both Keyword Match and **Semantic Vector Search**.
 ![Practice Dialog](screenshots/practice_demo.png)
 
 **3. Smart Data Import Center**
-Manage domains and easily import customized vocabulary and corpus with intelligent deduplication.
+Manage domains and import vocabulary, raw corpus (SQL), and semantic embeddings (VectorDB)  with intelligent deduplication in one place.
 ![Data Import](screenshots/data_upload_demo.png)
+
+---
+
 ## ✨ Key Features
 
 ### 📥 Smart Data Ingestion
 * **Domain Management**: Organize your learning materials into isolated domains.
-* **Flexible Import**: Import vocabulary (with frequencies) and contextual sentences via CSV/Excel uploads or manual text pasting.
+* **Flexible Import**: Import vocabulary (with frequencies) and contextual sentences via CSV/Excel/TXT uploads or manual entry.
 * **Intelligent Deduplication**: Automatically skips existing terms during import (case-insensitive) to maintain a clean database.
+* **Vector Indexing**: One-click generation of embeddings for your corpus using the industrial-grade **BGE-M3** model (via ChromaDB) to enable semantic search.
 
 ### 📖 Minimalist & Powerful Study Mode
 * **Client-side Pagination & Sorting**: Lightning-fast UI with in-memory pagination. Sort vocabulary by Word (A-Z), Frequency, or Importance Level (Stars).
@@ -39,10 +44,12 @@ Manage domains and easily import customized vocabulary and corpus with intellige
 
 ### 🤖 AI-Powered Interactive Study
 * **Seamless Navigation**: Switch instantly between words using **"⬅️ Prev"** and **"Next ➡️"** buttons without closing the dialog, ensuring an uninterrupted learning flow.
+* **Hybrid Search Engine**: Combines SQLite (Exact Match) and ChromaDB (Semantic Match). If an exact sentence isn't found, it finds the most semantically similar sentence from the VectorDB (e.g., searching "GQA" finds sentences about "Group Query Attention").
 * **Context-Aware Explanations**: Uses LLMs to translate sentences and explain *exactly* what a term means within that specific context.
 * **Auto-Fetch Definitions**: If a term lacks a definition, the system automatically calls the LLM in the background to fetch a precise English definition and Chinese translation.
 * **Audio & Pronunciation**: 
   * Generate high-quality TTS audio for words and full sentences on the fly.
+  * **Local Audio Caching**: Generated audio is cached locally (path configurable via `config.yaml`) to save API costs and speed up loading.
   * **Built-in Mic Widget**: Record your own voice directly in the browser and compare it with the generated TTS audio for pronunciation practice.
 * **Importance Rating**: Rate terms from 1 to 5 stars (⭐⭐⭐⭐⭐) to prioritize your learning.
 
@@ -50,43 +57,53 @@ Manage domains and easily import customized vocabulary and corpus with intellige
 
 ## 🛠️ Technology Stack
 
-* **Frontend & Framework**: [Streamlit](https://streamlit.io/) (with custom CSS injection and HTML components for mic recording)
+* **Frontend**: [Streamlit](https://streamlit.io/) (Custom CSS & Components)
 * **Backend**: Python 3.10+
-* **Database**: SQLite3 (Local, lightweight, with auto-schema migration)
-* **AI Integration**: [OpenAI SDK](https://github.com/openai/openai-python) (Compatible with OpenAI, DeepSeek, Moonshot, etc.)
+* **Database**: 
+  * **Structured**: SQLite3 (Metadata, Terms, Links)
+  * **Vector**: [ChromaDB](https://www.trychroma.com/) (Semantic Embeddings)
+* **AI Models**:
+  * **LLM**: OpenAI / DeepSeek / Moonshot (via OpenAI-compatible API)
+  * **Embedding**: BAAI/bge-m3 (State-of-the-art English/Chinese embedding)
 * **Data Processing**: Pandas, Regex
+* **Config**: YAML + DotEnv
+
 
 ---
 
 ## 📂 Project Architecture
 
-DeepGloss follows a clean, modular, and maintainable architecture separating UI, services, and database logic:
+DeepGloss follows a clean, modular, and maintainable architecture separating UI, services, and storage logic:
 
 ```text
 DeepGloss/
 ├── app/
-│   ├── database/        # Database connection, schemas, and queries
+│   ├── database/        # SQLite logic & schemas
 │   │   ├── db_manager.py
 │   │   └── schema.sql
-│   ├── services/        # Third-party integrations & core logic
-│   │   ├── ingestion.py # Text processing & parsing
-│   │   ├── llm_client.py# Universal LLM client (OpenAI/DeepSeek compatible)
-│   │   └── tts_manager.py
+│   ├── services/        # AI & Core Services
+│   │   ├── ingestion.py     # Text processing
+│   │   ├── llm_client.py    # Universal LLM client
+│   │   ├── tts_manager.py   # Text-to-Speech with caching
+│   │   └── vector_manager.py# ChromaDB Vector operations (New)
 │   ├── ui/              # Modular UI components
-│   │   ├── mic_widget.py    # Custom HTML5 audio recording component
-│   │   └── study_dialog.py  # Modal dialog logic for studying
+│   │   ├── mic_widget.py
+│   │   ├── components.py
+│   │   └── study_dialog.py
 │   └── utils/           # Helper scripts
-├── data/
-│   ├── audio_cache/     # Local storage for generated TTS audio
-│   └── deepgloss.db     # SQLite database file
-├── pages/               # Streamlit multi-page routing
-│   ├── import_data.py   # Page 1: Data ingestion
-│   └── study_mode.py    # Page 2: Study interface
-├── .env                 # Environment variables (API Keys - Git ignored)
-├── .gitignore           # Git ignore rules
-├── main.py              # Application entry point
-├── requirements.txt     # Python dependencies
-└── start.bat            # Windows quick-start script
+├── data/                # Data Storage
+│   ├── audio_cache/     # MP3 Cache (Auto-generated)
+│   ├── vector_store/    # ChromaDB Files (Auto-generated)
+│   └── deepgloss.db     # SQLite Database File
+├── pages/               # Streamlit Pages
+│   ├── import_data.py   # Data Ingestion (Terms/SQL/Vector)
+│   └── study_mode.py    # Main Study Interface
+├── .env                 # API Keys (Git ignored)
+├── config.py            # Config Loader Script
+├── config.yaml          # App Settings (Paths, Models)
+├── main.py              # Entry Point
+├── requirements.txt     # Python Dependencies
+└── start.bat            # Windows Quick-Start Script
 
 ```
 
@@ -96,11 +113,10 @@ DeepGloss/
 
 ### 1. Prerequisites
 
-Ensure you have Python 3.8+ (Recommended: 3.10+) installed on your system.
+* **OS**: Windows, macOS, or Linux.
+* **Environment Manager**: [Anaconda](https://www.anaconda.com/) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 ### 2. Clone the Repository
-
-Clone the repository to your local machine:
 
 ```bash
 git clone https://github.com/Eric-LLMs/DeepGloss.git
@@ -110,35 +126,47 @@ cd DeepGloss
 
 ### 3. Install Dependencies
 
-It is highly recommended to use a virtual environment:
+It is highly recommended to use **Conda** to manage the environment to ensure compatibility with PyTorch and VectorDB dependencies.
 
 ```bash
-python -m venv venv
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
+# 1. Create a new Conda environment named 'DeepGloss' with Python 3.10
+conda create -n DeepGloss python=3.10 -y
 
-# Install required packages
+# 2. Activate the environment
+conda activate DeepGloss
+
+# 3. Install required packages
+# (Pip is used here to ensure strict compatibility with the requirements.txt file)
 pip install -r requirements.txt
 
 ```
 
-### 4. Configuration (.env)
+### 4. Configuration
 
-Create a `.env` file in the root directory. DeepGloss uses a universal LLM client, allowing you to use OpenAI, DeepSeek, or other compatible APIs.
-
-Add the following to your `.env` file:
+**Step A: API Keys (`.env`)**
+Create a `.env` file in the root directory.
 
 ```env
-# Required: Your LLM API Key
-LLM_API_KEY=your_api_key_here
+# Required: Your LLM API Key (OpenAI, DeepSeek, etc.)
+LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
 
-# Optional: Base URL (Defaults to OpenAI if omitted. Change this for DeepSeek/Moonshot etc.)
-LLM_BASE_URL=[https://api.openai.com/v1](https://api.openai.com/v1)
+# Optional: Base URL (Defaults to OpenAI. Change for DeepSeek: https://api.deepseek.com)
+LLM_BASE_URL=https://api.openai.com/v1
 
-# Optional: Model Name (Defaults to o3-mini)
-LLM_MODEL=o3-mini
+```
+
+**Step B: App Settings (`config.yaml`)**
+Configure storage paths and models.
+
+```yaml
+storage:
+  # Path to store TTS audio. Relative paths work fine.
+  audio_cache_path: "data/audio_cache"
+
+models:
+  llm: "o3-mini"      # Model for explanation
+  tts: "tts-1-hd"     # Model for speech
+  tts_voice: "alloy"
 
 ```
 
@@ -151,19 +179,29 @@ streamlit run main.py
 
 ```
 
-*(Alternatively, simply double-click the `start.bat` file if you are on Windows).*
+*(Alternatively, simply double-click the start.bat file if you are on Windows.On first run, the system will automatically download the embedding model (~2GB) and initialize databases).*
 
 ---
 
 ## 💡 How to Use
 
-1. **Import Data**: Navigate to the `import_data` page from the sidebar. Create a new "Domain" (e.g., "AI Research Papers"). Upload your vocabulary CSV or paste text directly.
-2. **Add Corpus**: Switch to the "Import Sentences" tab and upload the source text or sentences where these words appear.
-3. **Start Studying**: Navigate to `study_mode`. Filter your list, sort by frequency or stars, and click **⚡ Practice** on any word to open the immersive study dialog.
-4. **Interact**: Generate audio, record your voice, read context-aware AI explanations, and rate the word's difficulty. Click **💾 Save** to sync your progress to the local database.
+1. **Create Domain**: Navigate to `Import Data` -> `Domain Management` to start a new topic (e.g., "AI Research Papers").
+2. **Import Terms**: Switch to `Import Vocabulary`. Upload your vocabulary CSV or paste text directly.
+3. **Build Corpus (Two Layers)**:
+* **Layer 1 (SQL)**: Import sentences to `Import Sentences (SQL)` for exact keyword matching.
+* **Layer 2 (Vector)**: Import raw text to `Import VectorDB` to enable AI Semantic Search.
+
+
+4. **Interactive Study**: Navigate to `study_mode` and click the **🤿 Deep Dive** icon to open the modal where you can generate TTS audio, view AI definitions, **record and compare your pronunciation**, get context-aware sentence translations, navigate seamlessly via Next/Prev buttons, and finally **Save** the best context to your database.
+
+
 
 ---
 
 ## 📝 License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+```
+
+```

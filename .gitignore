@@ -14,7 +14,7 @@ __pycache__/
 *$py.class
 *.manifest
 *.spec
-*.bat
+# *.bat
 
 # ==========================
 # 3. 项目数据 (不上传到 GitHub)

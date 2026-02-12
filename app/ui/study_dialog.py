@@ -5,20 +5,15 @@ from app.ui.mic_widget import render_mic_widget
 
 def _on_study_dialog_dismiss():
     """
-    对话框关闭时的回调函数。
-
-    主要作用：
-    - 当用户点击弹窗右上角的「X」或点击遮罩层关闭弹窗时，
-      Streamlit 会触发 on_dismiss 回调。
-    - 这里统一清理 `st.session_state.active_study_index`，
-      避免在主页面任意点击都再次弹出对话框。
+    Dialog dismissal callback.
+    Clears session state to prevent immediate reopening.
     """
     if "active_study_index" in st.session_state:
         del st.session_state["active_study_index"]
 
 
 def ai_parse_callback(word, context, target_key, llm):
-    """AI 解析翻译和释义的回调函数"""
+    """Callback for AI parsing of translation and explanation"""
     try:
         res = llm.explain_term_in_context(word, context)
         if isinstance(res, dict) and 'translation' in res:
@@ -29,10 +24,11 @@ def ai_parse_callback(word, context, target_key, llm):
 
 
 def render_detail_body(term_data, db, tts, llm):
-    """渲染弹窗的内部主体 UI 逻辑"""
-    t_id = term_data['id']  # 获取 ID
+    """Renders the internal UI body of the study dialog"""
+    t_id = term_data['id']
     term_dict = dict(term_data)
     word = term_dict['word']
+    domain_id = term_dict['domain_id']  # We need this to save new sentences
 
     # --- Star Rating UI ---
     current_level = term_dict.get('star_level', 1)
@@ -52,7 +48,6 @@ def render_detail_body(term_data, db, tts, llm):
 
     with col_t1:
         st.markdown("**Pronunciation**")
-
         term_audio_ph = st.empty()
         t_audio = st.session_state.get(f"new_audio_{t_id}", term_dict.get('audio_hash'))
         if t_audio:
@@ -98,16 +93,19 @@ def render_detail_body(term_data, db, tts, llm):
     st.markdown("#### Contextual Sentences")
 
     linked_sents = db.get_matches_for_term(t_id)
-    searched_sents = db.search_sentences_by_text(term_dict['domain_id'], word)
 
+    # Hybrid Search: SQLite first -> Then VectorDB
+    searched_sents = db.search_sentences_hybrid(term_dict['domain_id'], word)
+
+    # Merge results (using ID as key to deduplicate)
     all_sents_map = {s['id']: s for s in linked_sents}
-    saved_ids = set(all_sents_map.keys())
     for s in searched_sents:
         if s['id'] not in all_sents_map:
             all_sents_map[s['id']] = s
 
     all_sents = list(all_sents_map.values())
 
+    # Helper for length
     def _sent_len(row):
         try:
             content = dict(row).get("content_en", "")
@@ -115,6 +113,7 @@ def render_detail_body(term_data, db, tts, llm):
             content = ""
         return len(str(content).strip()) if content else 0
 
+    # Logic: Pick the longest sentence (Top 1) from recall list
     if all_sents:
         longest_sent = max(all_sents, key=_sent_len)
         final_sents = [longest_sent]
@@ -126,14 +125,19 @@ def render_detail_body(term_data, db, tts, llm):
 
     for i, sent in enumerate(final_sents):
         s_dict = dict(sent)
-        s_id = s_dict['id']
-        is_saved = s_id in saved_ids
+        s_id = s_dict['id']  # This could be int (SQLite) or str starting with 'vdb_'
+
+        # Determine source type for UI badge
+        is_vdb_only = str(s_id).startswith("vdb_")
+        is_linked = s_id in [s['id'] for s in linked_sents]
 
         with st.container(border=True):
-            if is_saved:
+            if is_vdb_only:
+                st.caption("🤖 Vector Match (Not in SQL)")
+            elif is_linked:
                 st.caption("✓ Linked Match")
             else:
-                st.caption("? Potential Match")
+                st.caption("? SQLite Match")
 
             st.markdown(f"**{s_dict['content_en']}**")
             st.write("")
@@ -177,7 +181,8 @@ def render_detail_body(term_data, db, tts, llm):
                     "Translation",
                     key=input_key,
                     height=200,
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    placeholder="Enter translation here..."
                 )
 
                 st.button(
@@ -199,33 +204,52 @@ def render_detail_body(term_data, db, tts, llm):
     col_btn1, col_btn2 = st.columns(2)
 
     with col_btn1:
+        # [UPDATED SAVE LOGIC]
         if st.button("💾 Save", type="primary", use_container_width=True, key=f"modal_save_{t_id}"):
-            updated_count = 0
+            # 1. Save Term Info (Definition, etc.)
             new_def = st.session_state.get(f"term_def_input_{t_id}")
             new_term_audio = st.session_state.get(f"new_audio_{t_id}")
             saved_level = st.session_state.get(f"star_radio_{t_id}")
 
             db.update_term_info(t_id, definition=new_def, audio_path=new_term_audio, star_level=saved_level)
 
+            # 2. Save/Update Sentences and Links
             for sent in final_sents:
-                s_id = dict(sent)['id']
-                input_key = f"s_cn_input_{s_id}"
-                user_cn_input = st.session_state.get(input_key)
-                new_s_audio = st.session_state.get(f"new_sent_audio_{s_id}")
-                cn_expl = st.session_state.get(f"msg_{input_key}")
+                s_dict = dict(sent)
+                temp_s_id = s_dict['id']
+                content_en = s_dict['content_en']
 
-                if user_cn_input or new_s_audio or cn_expl:
+                # Retrieve user inputs from session state using the UI key (temp_s_id)
+                input_key = f"s_cn_input_{temp_s_id}"
+                user_cn = st.session_state.get(input_key)
+                user_audio = st.session_state.get(f"new_sent_audio_{temp_s_id}")
+                user_expl = st.session_state.get(f"msg_{input_key}")
+
+                real_s_id = temp_s_id
+
+                # [CRITICAL LOGIC] Handle VectorDB-only sentences
+                if str(temp_s_id).startswith("vdb_"):
+                    # Check if user actually interacted with it or we just want to save the link
+                    # Strategy: Always insert into SQLite to create a permanent record
+
+                    # db.add_sentence handles duplication (returns existing ID if content matches)
+                    # If it's a new sentence, it creates a new ID.
+                    real_s_id = db.add_sentence(domain_id, content_en)
+
+                # Now we have a real integer ID (real_s_id).
+                # Update the record in SQLite with user's translation/audio
+                if user_cn or user_audio or user_expl:
                     db.update_sentence_info(
-                        s_id,
-                        content_cn=user_cn_input,
-                        audio_path=new_s_audio,
-                        cn_explanation=cn_expl,
+                        real_s_id,
+                        content_cn=user_cn,
+                        audio_path=user_audio,
+                        cn_explanation=user_expl,
                     )
 
-                db.add_match(t_id, s_id)
-                updated_count += 1
+                # Finally, create the link in the matches table
+                db.add_match(t_id, real_s_id)
 
-            st.toast("Saved successfully!", icon="✅")
+            st.toast("Saved successfully! Sentence is now linked.", icon="✅")
 
     with col_btn2:
         if st.button("✖ Close", use_container_width=True, key=f"modal_close_{t_id}"):
@@ -239,10 +263,9 @@ def render_detail_body(term_data, db, tts, llm):
 # ==========================================
 def trigger_study_dialog(term_list, db, tts, llm):
     """
-    通过 session_state 驱动弹窗，包含 Prev/Next 导航逻辑
+    Driven by session_state, including Prev/Next logic
     """
 
-    # ✅ 交互式学习
     @st.dialog("🤖 Interactive Study", width="large", on_dismiss=_on_study_dialog_dismiss)
     def _dialog():
         if 'active_study_index' not in st.session_state:
@@ -252,18 +275,18 @@ def trigger_study_dialog(term_list, db, tts, llm):
         curr_idx = st.session_state.active_study_index
         total_count = len(term_list)
 
-        # 安全检查
+        # Safety check
         if curr_idx < 0 or curr_idx >= total_count:
             st.error("Index out of range")
             return
 
-        # 获取当前词
+        # Get current term
         current_term = term_list[curr_idx]
         term_id = current_term['id']
         term_word = current_term['word']
 
         # ------------------------------------
-        # 3. 顶部导航区 (Title + Prev/Next Buttons)
+        # Top Nav (Title + Prev/Next Buttons)
         # ------------------------------------
         col_header, col_nav = st.columns([2, 1])
 
@@ -271,13 +294,10 @@ def trigger_study_dialog(term_list, db, tts, llm):
             st.markdown(f"## 🎯 {term_word}")
 
         with col_nav:
-            # 右侧导航区分割为两个小列
             nav_c1, nav_c2 = st.columns(2)
-
             has_prev = curr_idx > 0
             has_next = curr_idx < total_count - 1
 
-            # ✅ 修改 2: 按钮增加文字说明
             with nav_c1:
                 if st.button("⬅️ Prev", disabled=not has_prev, use_container_width=True, key=f"btn_prev_{curr_idx}"):
                     st.session_state.active_study_index -= 1
@@ -288,12 +308,11 @@ def trigger_study_dialog(term_list, db, tts, llm):
                     st.session_state.active_study_index += 1
                     st.rerun()
 
-        # 显示进度
         st.markdown(
             f"<div style='color:gray; font-size:0.8em; margin-bottom:10px;'>Word {curr_idx + 1} of {total_count}</div>",
             unsafe_allow_html=True)
 
-        # 4. 获取详情并渲染主体
+        # Render Body
         term_data_fresh = db.get_term_by_id(term_id)
         render_detail_body(term_data_fresh, db, tts, llm)
 

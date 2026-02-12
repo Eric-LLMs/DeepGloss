@@ -1,0 +1,18 @@
+# ==========================================
+# DeepGloss Application Configuration
+# ==========================================
+
+storage:
+  # Path to store generated TTS audio files.
+  # Options:
+  # 1. Relative path: e.g., "data/audio_cache" (relative to the project root directory)
+  # 2. Absolute path: e.g., "D:/DeepGloss_Assets/Audio" or "/var/lib/deepgloss/audio"
+  audio_cache_path: "data/audio_cache"
+
+models:
+  # LLM model for translation and explanation
+  llm: "o3-mini"
+  # TTS model for audio generation
+  tts: "tts-1-hd"
+  # Voice option for TTS (alloy, echo, fable, onyx, nova, shimmer)
+  tts_voice: "alloy"

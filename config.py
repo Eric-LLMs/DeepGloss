@@ -1,33 +1,74 @@
 import os
+import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
-# ================= 路径配置（保持通用，不依赖具体平台） =================
-# 项目根目录：config.py 所在目录的上一级
+# ================= Path Configuration =================
+
+# Project Root: Parent directory of this config file
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR
 
-# 数据目录：用于存放数据库、音频缓存等
+# Path to the YAML configuration file
+CONFIG_YAML_PATH = PROJECT_ROOT / "config.yaml"
+
+# Default fallback path for audio
+DEFAULT_AUDIO_PATH = "data/audio_cache"
+
+# Load YAML configuration
+config_data = {}
+if CONFIG_YAML_PATH.exists():
+    try:
+        with open(CONFIG_YAML_PATH, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"Warning: Failed to load config.yaml: {e}")
+
+# --- 1. Audio Cache Directory Setup ---
+storage_conf = config_data.get("storage", {})
+raw_audio_path = storage_conf.get("audio_cache_path", DEFAULT_AUDIO_PATH)
+
+if os.path.isabs(raw_audio_path):
+    AUDIO_CACHE_DIR = Path(raw_audio_path)
+else:
+    AUDIO_CACHE_DIR = PROJECT_ROOT / raw_audio_path
+
+try:
+    AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    print(f"Error creating audio directory at {AUDIO_CACHE_DIR}: {e}")
+    AUDIO_CACHE_DIR = PROJECT_ROOT / "data" / "audio_cache"
+    AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# --- 2. General Data Directory ---
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# 音频缓存目录：TTS 生成的 mp3 会缓存在这里，避免重复调用 API
-AUDIO_CACHE_DIR = DATA_DIR / "audio_cache"
-AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# ================= Model & Network Configuration =================
 
-# ================= 模型与网络配置 =================
-# 默认使用 OpenAI 官方模型
-LLM_MODEL = "o3-mini"          # 用于文本翻译 / 解释
-TTS_MODEL = "tts-1-hd"         # 用于 TTS 读音与音频生成
-TTS_VOICE = "alloy"
+model_conf = config_data.get("models", {})
 
-# 👇 优先读取 OPENAI_BASE_URL，其次兼容通用 LLM_BASE_URL / 旧的 DEEPSEEK_BASE_URL，最后回落到官方地址
-OPENAI_BASE_URL = (
-    os.getenv("OPENAI_BASE_URL")
-    or os.getenv("LLM_BASE_URL")
+# Models from YAML (or defaults)
+LLM_MODEL = model_conf.get("llm", "o3-mini")
+TTS_MODEL = model_conf.get("tts", "tts-1-hd")
+TTS_VOICE = model_conf.get("tts_voice", "alloy")
+
+# --- Unified API Configuration ---
+
+# 1. API Key: Priority -> LLM_API_KEY > OPENAI_API_KEY
+# This allows you to set LLM_API_KEY in .env for any provider (DeepSeek, OpenAI, etc.)
+LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+# 2. Base URL: Priority -> LLM_BASE_URL > OPENAI_BASE_URL > DEEPSEEK_BASE_URL > Default
+# Change this in .env to switch providers (e.g., "https://api.deepseek.com")
+LLM_BASE_URL = (
+    os.getenv("LLM_BASE_URL")
+    or os.getenv("OPENAI_BASE_URL")
     or os.getenv("DEEPSEEK_BASE_URL")
     or "https://api.openai.com/v1"
 )
