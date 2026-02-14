@@ -90,13 +90,13 @@ DeepGloss/
 │   │   ├── ingestion.py     # Text processing
 │   │   ├── llm_client.py    # Universal LLM client
 │   │   ├── tts_manager.py   # Text-to-Speech with caching
-│   │   └── vector_manager.py# ChromaDB Vector operations (New)
+│   │   └── vector_manager.py# ChromaDB Vector operations 
 │   ├── ui/              # Modular UI components
 │   │   ├── mic_widget.py
 │   │   ├── components.py
 │   │   └── study_dialog.py
 │   └── utils/           # Helper scripts
-│       ├── image_scraper.py # Web scraping for contextual images (New)
+│       ├── image_scraper.py # Web scraping for contextual images 
 │       └── ...
 ├── data/                # Data Storage
 │   ├── audio_cache/     # MP3 Cache (Auto-generated)
