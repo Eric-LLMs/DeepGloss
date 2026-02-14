@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
+from app.ui.sidebar import render_sidebar
 
 # Load Environment Variables
 load_dotenv()
@@ -11,15 +12,19 @@ st.set_page_config(
     layout="wide"
 )
 
+# Render the custom beautiful sidebar
+render_sidebar()
+
 st.title("🧠 DeepGloss Learning Assistant")
 
 st.markdown("""
 ### Welcome to DeepGloss
 A domain-specific English learning tool tailored for your specific needs.
 
-Please select a function from the sidebar:
-- **import_data**: Import your vocabulary and sentences
-- **study_mode**: Start studying
+**Please select a function from the sidebar:**
+- 📥 **Import Data**: Import your vocabulary, sentences, and build VectorDB index.
+- 📖 **Study Mode**: Start your immersive and interactive learning session with AI explanations and TTS.
+- 🛠️ **Manage Vocabulary**: Edit definitions, levels, and enable/disable specific words.
 """)
 
 # Check API Key

@@ -4,9 +4,12 @@ from app.database.db_manager import DBManager
 from app.services.tts_manager import TTSManager
 from app.services.llm_client import LLMClient
 from app.ui.study_dialog import trigger_study_dialog
+from app.ui.sidebar import render_sidebar
+
 
 # --- Initialization ---
 st.set_page_config(page_title="Study Mode", layout="wide")
+render_sidebar()  # Render custom sidebar
 
 # Initialize core services
 db = DBManager()
@@ -97,7 +100,7 @@ search_term = st.text_input(
 )
 
 # 3. Data Fetching (Fetch all to memory)
-terms_raw = db.get_terms_by_domain(sel_d_id)
+terms_raw = db.get_terms_by_domain(sel_d_id, only_active=True)
 if not terms_raw:
     st.info("No vocabulary found in this domain.")
     st.stop()

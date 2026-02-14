@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS terms (
     frequency INTEGER DEFAULT 1,
     star_level INTEGER DEFAULT 1,
     audio_hash TEXT,
+    is_active INTEGER DEFAULT 1,  -- 🌟 新增字段：1 表示 Enable (默认)，0 表示 Disable
     FOREIGN KEY(domain_id) REFERENCES domain(id) ON DELETE CASCADE
 );
 

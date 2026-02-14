@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 from app.database.db_manager import DBManager
 from app.services.vector_manager import VectorManager
+from app.ui.sidebar import render_sidebar
 import re
 
 st.set_page_config(page_title="Data Management", layout="wide")
+render_sidebar()  # Render custom sidebar
 
 # --- Custom 3D & Color Styling ---
 st.markdown("""

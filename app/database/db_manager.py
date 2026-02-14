@@ -91,8 +91,20 @@ class DBManager:
         self.conn.commit()
         return cursor.lastrowid
 
-    def get_terms_by_domain(self, domain_id):
+    def get_terms_by_domain(self, domain_id, only_active=False):
+        if only_active:
+            return self.conn.execute("SELECT * FROM terms WHERE domain_id=? AND is_active=1", (domain_id,)).fetchall()
         return self.conn.execute("SELECT * FROM terms WHERE domain_id=?", (domain_id,)).fetchall()
+
+    def bulk_update_terms(self, updates_list):
+        cursor = self.conn.cursor()
+        for row in updates_list:
+            cursor.execute("""
+                UPDATE terms 
+                SET word = ?, definition = ?, star_level = ?, is_active = ?
+                WHERE id = ?
+            """, (row['word'], row['definition'], row['star_level'], row['is_active'], row['id']))
+        self.conn.commit()
 
     def get_term_by_id(self, term_id):
         return self.conn.execute("SELECT * FROM terms WHERE id=?", (term_id,)).fetchone()

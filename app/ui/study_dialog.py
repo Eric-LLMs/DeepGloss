@@ -97,20 +97,26 @@ def render_detail_body(term_data, db, tts, llm):
 
     st.divider()
 
+    # Priority logic: Always trust saved matches first.
     linked_sents = db.get_matches_for_term(t_id)
-    searched_sents = db.search_sentences_hybrid(domain_id, word)
 
-    all_sents_map = {s['id']: s for s in linked_sents}
-    for s in searched_sents:
-        if s['id'] not in all_sents_map:
-            all_sents_map[s['id']] = s
+    if linked_sents:
+        # Deduplicate sentences by ID to prevent Streamlit key conflicts from dirty data
+        unique_sents = {}
+        for s in linked_sents:
+            if s['id'] not in unique_sents:
+                unique_sents[s['id']] = s
+        final_sents = list(unique_sents.values())
+    else:
+        searched_sents = db.search_sentences_hybrid(domain_id, word)
 
-    all_sents = list(all_sents_map.values())
+        if searched_sents:
+            def _sent_len(row):
+                return len(str(dict(row).get("content_en", "")).strip())
 
-    def _sent_len(row):
-        return len(str(dict(row).get("content_en", "")).strip())
-
-    final_sents = [max(all_sents, key=_sent_len)] if all_sents else []
+            final_sents = [max(searched_sents, key=_sent_len)]
+        else:
+            final_sents = []
 
     context_str = dict(final_sents[0]).get('content_en', '') if final_sents else ""
     def_str = st.session_state.get(def_key, term_dict.get('definition', ''))

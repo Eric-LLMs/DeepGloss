@@ -8,7 +8,7 @@
 
 **DeepGloss** is a smart, domain-specific English learning assistant built with Streamlit and powered by Large Language Models (LLMs) and Vector Database technology.
 
-Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to **import customized vocabulary and corpus**, **automatically fetches definitions**, **generates Text-to-Speech (TTS) audio**, **extracts dynamic visual context (images)** to aid in understanding complex professional vocabulary, **provides context-aware AI translations**, and **offers interactive voice recording for pronunciation comparison**. Crucially, it features **Hybrid Search (SQL + Vector)** to find relevant example sentences even when exact keywords are missing.
+Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to **import customized vocabulary and corpus**, **automatically fetches definitions**, **generates Text-to-Speech (TTS) audio**, **extracts dynamic visual context (images)** to aid in understanding complex professional vocabulary, **provides context-aware AI translations**, and **offers interactive voice recording for pronunciation comparison**. Crucially, it features **Hybrid Search (SQL + Vector)** to find relevant example sentences even when exact keywords are missing, and empowers users with an **Efficient Library Governance** suite for deterministic data maintenance and strategic library pruning..
 
 ---
 
@@ -16,7 +16,8 @@ Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** wit
 
 **1. Clean & Modern Vocabulary List**  
   
-Seamlessly sort, search, and view inline definitions via hover popovers without leaving the page.
+Seamlessly sort, search, and view inline definitions via hover popovers without leaving the page.  
+  
 ![Vocabulary List](screenshots/listpage_demo.png)
 
 **2. Interactive Study Dialog**  
@@ -27,8 +28,15 @@ Practice pronunciation with the built-in HTML5 mic widget, compare with native T
 
 **3. Smart Data Import Center**  
   
-Manage domains and import vocabulary, raw corpus (SQL), and semantic embeddings (VectorDB)  with intelligent deduplication in one place.
+Manage domains and import vocabulary, raw corpus (SQL), and semantic embeddings (VectorDB)  with intelligent deduplication in one place.  
+  
 ![Data Import](screenshots/data_upload_demo.png)
+
+**4. Efficient Library Governance**   
+  
+Toggle terms with smooth blue/gray switches, rate importance with star icons, use "Double-Click to Edit" for definitions, and transactional page-level saves to keep the workspace clean yet powerful.
+  
+![Manage Vocabulary](screenshots/manage_vocab_demo.png)
 
 ---
 
@@ -59,8 +67,16 @@ Manage domains and import vocabulary, raw corpus (SQL), and semantic embeddings 
 * **Audio & Pronunciation**: 
   * Generate high-quality TTS audio for words and full sentences on the fly.
   * **Local Audio Caching**: Generated audio is cached locally (path configurable via `config.yaml`) to save API costs and speed up loading.
-* **Importance Rating**: Rate terms from 1 to 5 stars (⭐⭐⭐⭐⭐) to prioritize your learning.
-
+* **Importance Rating**: Rate terms from 1 to 5 stars (⭐⭐⭐⭐⭐) to prioritize your learning.  
+  
+### 🛠️ Efficient Library Governance
+* **Efficient Toggles**: Instantly enable/disable terms with visual feedback (Blue for ON, Gray for OFF).
+* **Double-Click to Expand**: Definitions are displayed as clean labels and only expand into multi-line editors upon double-clicking, preventing accidental edits.
+* **Unified Visuals**: Star levels are managed via intuitive icon pickers (⭐) instead of raw numbers.
+* **Transactional Page Commits**: Commit all modifications on a single page with one click, ensuring high-speed bulk updates while maintaining data integrity through a defensive "Save-then-Navigate" workflow.  
+* **Global Operation Flow**: Perform global sorting across the entire database (Frequency, Word, Level) and save changes page-by-page to ensure data integrity.
+* **Self-Healing Logic**: Automatically deduplicates legacy "dirty data" in SQL matches to ensure UI stability.
+  
 ---
 
 ## 🛠️ Technology Stack
@@ -108,6 +124,7 @@ DeepGloss/
 │   ├── vector_store/    # ChromaDB Files (Auto-generated)
 │   └── deepgloss.db     # SQLite Database File
 ├── pages/               # Streamlit Pages
+│   └── edit_vocabulary.py  # Efficient Library Governance
 │   ├── import_data.py   # Data Ingestion (Terms/SQL/Vector)
 │   └── study_mode.py    # Main Study Interface
 ├── .env                 # API Keys (Git ignored)
@@ -212,8 +229,10 @@ streamlit run main.py
 * **Layer 1 (SQL)**: Import sentences to `Import Sentences (SQL)` for exact keyword matching.
 * **Layer 2 (Vector)**: Import raw text to `Import VectorDB` to enable AI Semantic Search.
 
-4. **Interactive Study**: Navigate to `study_mode` and click the **🤿 Deep Dive** icon to open the modal where you can generate TTS audio, view AI definitions, **record and compare your pronunciation**, get context-aware sentence translations, visually understand concepts via **Images**, navigate seamlessly via Next/Prev buttons, and finally **Save** the best context and visuals to your database.
+4. **Interactive Study**: Navigate to `study_mode` and click the **🤿 Deep Dive** icon to open the modal where you can generate TTS audio, view AI definitions, **record and compare your pronunciation**, get context-aware sentence translations, visually understand concepts via **Images**, navigate seamlessly via Next/Prev buttons, and finally **Save** the best context and visuals to your database.  
 
+5. **Library Governance**: Navigate to the Manage Vocabulary suite to perform global sorting (by frequency or star level), refine definitions via intentional double-click editing, and toggle term visibility to ensure a high-precision language library.  
+  
 ---
 
 ## 📝 License
