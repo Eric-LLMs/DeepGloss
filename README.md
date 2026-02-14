@@ -19,7 +19,8 @@ Seamlessly sort, search, and view inline definitions via hover popovers without 
 ![Vocabulary List](screenshots/listpage_demo.png)
 
 **2. Interactive Study Dialog**
-Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, visualize abstract concepts with automatically fetched contextual images, and get AI-powered contextual explanations. The system retrieves sentences via both Keyword Match and Semantic Vector Search.
+Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, visualize abstract concepts with automatically fetched contextual images, and get AI-powered contextual explanations. The system retrieves sentences via both Keyword Match and Semantic Vector Search.  
+  
 ![Practice Dialog](screenshots/practice_demo.png)
 
 **3. Smart Data Import Center**
