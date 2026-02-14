@@ -128,7 +128,7 @@ DeepGloss/
 ### 2. Clone the Repository
 
 ```bash
-git clone [https://github.com/Eric-LLMs/DeepGloss.git](https://github.com/Eric-LLMs/DeepGloss.git)
+git clone https://github.com/Eric-LLMs/DeepGloss.git
 cd DeepGloss
 
 
