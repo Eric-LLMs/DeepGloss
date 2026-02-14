@@ -47,6 +47,12 @@ class DBManager:
         except sqlite3.OperationalError:
             pass
 
+        try:
+            self.conn.execute("ALTER TABLE terms ADD COLUMN image_paths TEXT")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
     # ==========================================
     # 1. Domain Operations
     # ==========================================
@@ -91,13 +97,15 @@ class DBManager:
     def get_term_by_id(self, term_id):
         return self.conn.execute("SELECT * FROM terms WHERE id=?", (term_id,)).fetchone()
 
-    def update_term_info(self, term_id, definition=None, audio_path=None, star_level=None):
+    def update_term_info(self, term_id, definition=None, audio_path=None, star_level=None, image_paths=None):
         if definition is not None:
             self.conn.execute("UPDATE terms SET definition=? WHERE id=?", (definition, term_id))
         if audio_path is not None:
             self.conn.execute("UPDATE terms SET audio_hash=? WHERE id=?", (audio_path, term_id))
         if star_level is not None:
             self.conn.execute("UPDATE terms SET star_level=? WHERE id=?", (star_level, term_id))
+        if image_paths is not None:
+            self.conn.execute("UPDATE terms SET image_paths=? WHERE id=?", (image_paths, term_id))
         self.conn.commit()
 
     # ==========================================

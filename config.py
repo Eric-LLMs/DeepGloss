@@ -15,8 +15,9 @@ PROJECT_ROOT = BASE_DIR
 # Path to the YAML configuration file
 CONFIG_YAML_PATH = PROJECT_ROOT / "config.yaml"
 
-# Default fallback path for audio
+# Default fallback path for audio and image
 DEFAULT_AUDIO_PATH = "data/audio_cache"
+DEFAULT_IMAGE_PATH = "data/image_cache"
 
 # Load YAML configuration
 config_data = {}
@@ -43,6 +44,21 @@ except Exception as e:
     AUDIO_CACHE_DIR = PROJECT_ROOT / "data" / "audio_cache"
     AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- 1.1 Image Cache Directory Setup ---
+raw_image_path = storage_conf.get("image_cache_path", DEFAULT_IMAGE_PATH)
+
+if os.path.isabs(raw_image_path):
+    IMAGE_CACHE_DIR = Path(raw_image_path)
+else:
+    IMAGE_CACHE_DIR = PROJECT_ROOT / raw_image_path
+
+try:
+    IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    print(f"Error creating image directory at {IMAGE_CACHE_DIR}: {e}")
+    IMAGE_CACHE_DIR = PROJECT_ROOT / "data" / "image_cache"
+    IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # --- 2. General Data Directory ---
 DATA_DIR = PROJECT_ROOT / "data"
@@ -61,11 +77,9 @@ TTS_VOICE = model_conf.get("tts_voice", "alloy")
 # --- Unified API Configuration ---
 
 # 1. API Key: Priority -> LLM_API_KEY > OPENAI_API_KEY
-# This allows you to set LLM_API_KEY in .env for any provider (DeepSeek, OpenAI, etc.)
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 # 2. Base URL: Priority -> LLM_BASE_URL > OPENAI_BASE_URL > DEEPSEEK_BASE_URL > Default
-# Change this in .env to switch providers (e.g., "https://api.deepseek.com")
 LLM_BASE_URL = (
     os.getenv("LLM_BASE_URL")
     or os.getenv("OPENAI_BASE_URL")

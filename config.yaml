@@ -9,6 +9,9 @@ storage:
   # 2. Absolute path: e.g., "D:/DeepGloss_Assets/Audio" or "/var/lib/deepgloss/audio"
   audio_cache_path: "data/audio_cache"
 
+  # Path to store fetched images.
+  image_cache_path: "data/image_cache"
+
 models:
   # LLM model for translation and explanation
   llm: "o3-mini"

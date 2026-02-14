@@ -8,7 +8,7 @@
 
 **DeepGloss** is a smart, domain-specific English learning assistant built with Streamlit and powered by Large Language Models (LLMs) and Vector Database technology.
 
-Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to import customized vocabulary and corpus, automatically fetches definitions, generates Text-to-Speech (TTS) audio, provides context-aware AI translations, and offers interactive voice recording for pronunciation comparison. Crucially, it features **Hybrid Search (SQL + Vector)** to find relevant example sentences even when exact keywords are missing.
+Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** within specific domains (e.g., "Stanford CS336 Lectures", "Legal English", "Medical Terms"). It allows users to **import customized vocabulary and corpus**, **automatically fetches definitions**, **generates Text-to-Speech (TTS) audio**, **extracts dynamic visual context (images)** to aid in understanding complex professional vocabulary, **provides context-aware AI translations**, and **offers interactive voice recording for pronunciation comparison**. Crucially, it features **Hybrid Search (SQL + Vector)** to find relevant example sentences even when exact keywords are missing.
 
 ---
 
@@ -18,8 +18,8 @@ Unlike generic dictionary apps, DeepGloss focuses on **contextual learning** wit
 Seamlessly sort, search, and view inline definitions via hover popovers without leaving the page.
 ![Vocabulary List](screenshots/listpage_demo.png)
 
-**2. Immersive Study Dialog with Hybrid Search**
-Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, and get AI-powered contextual explanations. The system retrieves sentences via both Keyword Match and **Semantic Vector Search**.
+**2. Immersive Study Dialog with Visual Context & Hybrid Search**
+Practice pronunciation with the built-in HTML5 mic widget, compare with native TTS, visualize abstract concepts with automatically fetched contextual images, and get AI-powered contextual explanations. The system retrieves sentences via both Keyword Match and **Semantic Vector Search**.
 ![Practice Dialog](screenshots/practice_demo.png)
 
 **3. Smart Data Import Center**
@@ -47,25 +47,30 @@ Manage domains and import vocabulary, raw corpus (SQL), and semantic embeddings 
 * **Hybrid Search Engine**: Combines SQLite (Exact Match) and ChromaDB (Semantic Match). If an exact sentence isn't found, it finds the most semantically similar sentence from the VectorDB (e.g., searching "GQA" finds sentences about "Group Query Attention").
 * **Context-Aware Explanations**: Uses LLMs to translate sentences and explain *exactly* what a term means within that specific context.
 * **Auto-Fetch Definitions**: If a term lacks a definition, the system automatically calls the LLM in the background to fetch a precise English definition and Chinese translation.
+* **Visual Context for Professional Vocabulary**:
+  * **Multi-Dimensional Image Search**: Grasp complex or abstract terms instantly. The system automatically scrapes Google Images (with Bing as a seamless fallback) using a combined 3-tier strategy: *Term alone*, *Term + Definition*, and *Term + Contextual Sentence* to fetch highly accurate visual representations.
+  * **Asynchronous Loading & Randomized Regeneration**: Images load via a non-blocking UI mechanism (with a JS loading spinner) so you can study text while images fetch in the background. Not satisfied with the first batch? Click **Regenerate** to randomly sample a new set of images from a broader candidate pool of top search results, ensuring diverse visual perspectives.
+  * **Local Image Caching**: Once saved, images are downloaded directly to your local cache and linked via relative paths in the SQLite database, ensuring zero-latency loads and offline availability for future reviews.
+* **Built-in Mic Widget**: Record your own voice directly in the browser and compare it with the generated TTS audio for pronunciation practice.
 * **Audio & Pronunciation**: 
   * Generate high-quality TTS audio for words and full sentences on the fly.
   * **Local Audio Caching**: Generated audio is cached locally (path configurable via `config.yaml`) to save API costs and speed up loading.
-  * **Built-in Mic Widget**: Record your own voice directly in the browser and compare it with the generated TTS audio for pronunciation practice.
 * **Importance Rating**: Rate terms from 1 to 5 stars (⭐⭐⭐⭐⭐) to prioritize your learning.
 
 ---
 
 ## 🛠️ Technology Stack
 
-* **Frontend**: [Streamlit](https://streamlit.io/) (Custom CSS & Components)
+* **Frontend**: [Streamlit](https://streamlit.io/) (Custom CSS, JS & Components)
 * **Backend**: Python 3.10+
 * **Database**: 
-  * **Structured**: SQLite3 (Metadata, Terms, Links)
+  * **Structured**: SQLite3 (Metadata, Terms, Links, Image/Audio Paths)
   * **Vector**: [ChromaDB](https://www.trychroma.com/) (Semantic Embeddings)
 * **AI Models**:
   * **LLM**: OpenAI / DeepSeek / Moonshot (via OpenAI-compatible API)
   * **Embedding**: BAAI/bge-m3 (State-of-the-art English/Chinese embedding)
 * **Data Processing**: Pandas, Regex
+* **Web Scraping**: Native `urllib` & `re` (Lightweight Google/Bing Image extraction)
 * **Config**: YAML + DotEnv
 
 
@@ -91,8 +96,11 @@ DeepGloss/
 │   │   ├── components.py
 │   │   └── study_dialog.py
 │   └── utils/           # Helper scripts
+│       ├── image_scraper.py # Web scraping for contextual images (New)
+│       └── ...
 ├── data/                # Data Storage
 │   ├── audio_cache/     # MP3 Cache (Auto-generated)
+│   ├── image_cache/     # Downloaded image assets (Auto-generated)
 │   ├── vector_store/    # ChromaDB Files (Auto-generated)
 │   └── deepgloss.db     # SQLite Database File
 ├── pages/               # Streamlit Pages
@@ -104,6 +112,7 @@ DeepGloss/
 ├── main.py              # Entry Point
 ├── requirements.txt     # Python Dependencies
 └── start.bat            # Windows Quick-Start Script
+
 
 ```
 
@@ -119,8 +128,9 @@ DeepGloss/
 ### 2. Clone the Repository
 
 ```bash
-git clone https://github.com/Eric-LLMs/DeepGloss.git
+git clone [https://github.com/Eric-LLMs/DeepGloss.git](https://github.com/Eric-LLMs/DeepGloss.git)
 cd DeepGloss
+
 
 ```
 
@@ -139,6 +149,7 @@ conda activate DeepGloss
 # (Pip is used here to ensure strict compatibility with the requirements.txt file)
 pip install -r requirements.txt
 
+
 ```
 
 ### 4. Configuration
@@ -153,6 +164,7 @@ LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
 # Optional: Base URL (Defaults to OpenAI. Change for DeepSeek: https://api.deepseek.com)
 LLM_BASE_URL=https://api.openai.com/v1
 
+
 ```
 
 **Step B: App Settings (`config.yaml`)**
@@ -162,11 +174,14 @@ Configure storage paths and models.
 storage:
   # Path to store TTS audio. Relative paths work fine.
   audio_cache_path: "data/audio_cache"
+  # Path to store fetched images for visual context.
+  image_cache_path: "data/image_cache"
 
 models:
   llm: "o3-mini"      # Model for explanation
   tts: "tts-1-hd"     # Model for speech
   tts_voice: "alloy"
+
 
 ```
 
@@ -176,6 +191,7 @@ Start the Streamlit development server:
 
 ```bash
 streamlit run main.py
+
 
 ```
 
@@ -188,13 +204,11 @@ streamlit run main.py
 1. **Create Domain**: Navigate to `Import Data` -> `Domain Management` to start a new topic (e.g., "AI Research Papers").
 2. **Import Terms**: Switch to `Import Vocabulary`. Upload your vocabulary CSV or paste text directly.
 3. **Build Corpus (Two Layers)**:
+
 * **Layer 1 (SQL)**: Import sentences to `Import Sentences (SQL)` for exact keyword matching.
 * **Layer 2 (Vector)**: Import raw text to `Import VectorDB` to enable AI Semantic Search.
 
-
-4. **Interactive Study**: Navigate to `study_mode` and click the **🤿 Deep Dive** icon to open the modal where you can generate TTS audio, view AI definitions, **record and compare your pronunciation**, get context-aware sentence translations, navigate seamlessly via Next/Prev buttons, and finally **Save** the best context to your database.
-
-
+4. **Interactive Study**: Navigate to `study_mode` and click the **🤿 Deep Dive** icon to open the modal where you can generate TTS audio, view AI definitions, **record and compare your pronunciation**, get context-aware sentence translations, visually understand concepts via **Images**, navigate seamlessly via Next/Prev buttons, and finally **Save** the best context and visuals to your database.
 
 ---
 
@@ -203,5 +217,6 @@ streamlit run main.py
 This project is licensed under the MIT License. See the LICENSE file for details.
 
 ```
+
 
 ```
