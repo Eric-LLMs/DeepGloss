@@ -2,6 +2,9 @@ import streamlit as st
 import urllib.parse
 import os
 import streamlit.components.v1 as components
+import concurrent.futures
+import threading
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 from app.ui.mic_widget import render_mic_widget
 from app.utils.image_scraper import fetch_term_images
 from config import PROJECT_ROOT
@@ -24,6 +27,7 @@ def get_rel_path(path_str):
 
 
 def _on_study_dialog_dismiss():
+    """Cleanup states when dialog is closed."""
     if "active_study_index" in st.session_state:
         del st.session_state["active_study_index"]
     if "current_viewed_term_id" in st.session_state:
@@ -31,6 +35,7 @@ def _on_study_dialog_dismiss():
 
 
 def ai_parse_callback(word, context, target_key, llm):
+    """Callback for AI explanation of contextual sentences."""
     try:
         enhanced_context = f"{context}\n\n(Instruction: You MUST provide the explanation of the term in BOTH English and Chinese.)"
         res = llm.explain_term_in_context(word, enhanced_context)
@@ -48,6 +53,9 @@ def render_detail_body(term_data, db, tts, llm):
     domain_id = term_dict['domain_id']
 
     current_level = term_dict.get('star_level', 1)
+    if current_level is None:
+        current_level = 1
+
     star_options = {1: "⭐", 2: "⭐⭐", 3: "⭐⭐⭐", 4: "⭐⭐⭐⭐", 5: "⭐⭐⭐⭐⭐"}
     new_level = st.radio("Importance Level", options=[1, 2, 3, 4, 5], format_func=lambda x: star_options[x],
                          index=current_level - 1, horizontal=True, label_visibility="collapsed",
@@ -81,27 +89,26 @@ def render_detail_body(term_data, db, tts, llm):
         st.markdown("**Definition**")
         def_key = f"term_def_input_{t_id}"
 
+        def_placeholder = st.empty()
+        needs_def = False
+
         if def_key not in st.session_state:
             if not term_dict['definition']:
-                with st.spinner("Auto-fetching definition..."):
-                    prompt = f"Provide a clear, concise English definition and its Chinese translation for the term '{word}'."
-                    ai_def = llm.get_completion(prompt,
-                                                system_prompt="You are a helpful dictionary assistant. Output only the definition.")
-                    st.session_state[def_key] = ai_def
+                needs_def = True
             else:
                 st.session_state[def_key] = term_dict['definition']
 
-        st.text_area("Definition", key=def_key, label_visibility="collapsed", height=130)
+        if not needs_def:
+            def_placeholder.text_area("Definition", key=def_key, label_visibility="collapsed", height=130)
+
         google_img_url = "https://www.google.com/search?tbm=isch&q=" + urllib.parse.quote(word)
         st.markdown(f"↳ [🔍 Search Images on Google]({google_img_url})")
 
     st.divider()
 
-    # Priority logic: Always trust saved matches first.
     linked_sents = db.get_matches_for_term(t_id)
 
     if linked_sents:
-        # Deduplicate sentences by ID to prevent Streamlit key conflicts from dirty data
         unique_sents = {}
         for s in linked_sents:
             if s['id'] not in unique_sents:
@@ -204,6 +211,10 @@ def render_detail_body(term_data, db, tts, llm):
             saved_level = st.session_state.get(f"star_radio_{t_id}")
 
             saved_images = st.session_state.get(f"img_paths_{t_id}", "")
+
+            # Prevent SQLite binding error if image paths are accidentally stored as a list
+            if isinstance(saved_images, list):
+                saved_images = ",".join(saved_images)
             if saved_images in ["NOT_FOUND", "NEEDS_FETCH", "FETCHING"]:
                 saved_images = ""
 
@@ -223,7 +234,18 @@ def render_detail_body(term_data, db, tts, llm):
                 real_s_id = temp_s_id
 
                 if str(temp_s_id).startswith("vdb_"):
-                    real_s_id = db.add_sentence(domain_id, content_en)
+                    # Check if sentence already exists in SQL to prevent UNIQUE constraint IntegrityError
+                    existing_row = db.conn.execute("SELECT id FROM sentences WHERE content_en = ?",
+                                                   (content_en,)).fetchone()
+
+                    if existing_row:
+                        real_s_id = existing_row['id']
+                    else:
+                        real_s_id = db.add_sentence(domain_id, content_en)
+                        if not real_s_id:
+                            real_s_id = \
+                            db.conn.execute("SELECT id FROM sentences WHERE content_en = ?", (content_en,)).fetchone()[
+                                'id']
 
                 if user_cn or user_audio or user_expl:
                     db.update_sentence_info(real_s_id, content_cn=user_cn, audio_path=user_audio,
@@ -232,6 +254,8 @@ def render_detail_body(term_data, db, tts, llm):
                 db.add_match(t_id, real_s_id)
 
             st.toast("Saved successfully! Data is now linked.", icon="✅")
+            # Force UI to refresh instantly to show the new "✓ Linked Match" status
+            st.rerun()
 
     with col_btn2:
         if st.button("✖ Close", use_container_width=True, key=f"modal_close_{t_id}"):
@@ -243,6 +267,7 @@ def render_detail_body(term_data, db, tts, llm):
         st.markdown("#### 🖼️ Visual Context")
 
         img_state_key = f"img_paths_{t_id}"
+        needs_img = False
 
         if f"is_regen_{t_id}" not in st.session_state:
             st.session_state[f"is_regen_{t_id}"] = False
@@ -261,7 +286,10 @@ def render_detail_body(term_data, db, tts, llm):
             if valid_paths:
                 st.session_state[img_state_key] = ",".join(valid_paths)
             else:
-                st.session_state[img_state_key] = "NEEDS_FETCH"
+                needs_img = True
+                st.session_state[img_state_key] = "FETCHING"
+        elif st.session_state[img_state_key] in ["NEEDS_FETCH", "FETCHING"]:
+            needs_img = True
 
         col_title, col_regen = st.columns([4, 1])
         with col_regen:
@@ -302,44 +330,96 @@ def render_detail_body(term_data, db, tts, llm):
         """
 
         img_display_area = st.empty()
-        state = st.session_state[img_state_key]
 
-        if state == "NEEDS_FETCH":
-            with img_display_area.container():
-                components.html(js_spinner, height=180)
-            st.session_state[img_state_key] = "FETCHING"
-            st.rerun()
+        if not needs_img:
+            state = st.session_state[img_state_key]
+            if state not in ["NOT_FOUND", "", "NEEDS_FETCH", "FETCHING"]:
+                with img_display_area.container():
+                    # Safely handle both list (from async return) and string (from DB)
+                    if isinstance(state, list):
+                        paths = state
+                        st.session_state[img_state_key] = ",".join(paths)
+                    else:
+                        paths = state.split(",")
 
-        elif state == "FETCHING":
-            with img_display_area.container():
-                components.html(js_spinner, height=180)
+                    img_cols = st.columns(3)
+                    for i, p in enumerate(paths):
+                        if i < 3:
+                            abs_p = get_safe_abs_path(p)
+                            if abs_p and os.path.exists(abs_p):
+                                with img_cols[i]:
+                                    st.image(abs_p, use_container_width=True)
+            elif state == "NOT_FOUND":
+                img_display_area.warning(
+                    "⚠️ Could not fetch images automatically. Please check your network or try Regenerate.")
 
-            is_regen = st.session_state.get(f"is_regen_{t_id}", False)
-            new_paths = fetch_term_images(word, def_str, context_str, t_id, is_regenerate=is_regen)
+    # Execute async calls sequentially at the very end using a non-blocking explicit executor setup
+    if needs_def or needs_img:
+        ctx = get_script_run_ctx()
 
-            if new_paths:
-                st.session_state[img_state_key] = new_paths
-            else:
-                st.session_state[img_state_key] = "NOT_FOUND"
+        def run_with_ctx(func, *args, **kwargs):
+            if ctx:
+                add_script_run_ctx(threading.current_thread(), ctx)
+            return func(*args, **kwargs)
 
-            st.rerun()
+        # Avoid 'with' block to prevent Streamlit StopException from getting trapped and deadlocking
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        future_def = None
+        future_img = None
 
-        elif state not in ["NOT_FOUND", ""]:
-            with img_display_area.container():
-                paths = state.split(",")
-                img_cols = st.columns(3)
-                for i, p in enumerate(paths):
-                    if i < 3:
-                        abs_p = get_safe_abs_path(p)
-                        if abs_p and os.path.exists(abs_p):
-                            with img_cols[i]:
-                                st.image(abs_p, use_container_width=True)
+        try:
+            if needs_def:
+                with def_placeholder.container():
+                    st.info("🤖 Auto-fetching definition in background...")
+                prompt = f"Provide a clear, concise English definition and its Chinese translation for the term '{word}'."
+                future_def = executor.submit(
+                    run_with_ctx,
+                    llm.get_completion,
+                    prompt,
+                    system_prompt="You are a helpful dictionary assistant. Output only the definition."
+                )
 
-        elif state == "NOT_FOUND":
-            img_display_area.warning(
-                "⚠️ Could not fetch images automatically. Please check your network or try Regenerate.")
+            if needs_img:
+                with img_display_area.container():
+                    components.html(js_spinner, height=180)
+                is_regen = st.session_state.get(f"is_regen_{t_id}", False)
+                future_img = executor.submit(
+                    run_with_ctx,
+                    fetch_term_images,
+                    word,
+                    def_str,
+                    context_str,
+                    t_id,
+                    is_regenerate=is_regen
+                )
 
-        st.divider()
+            if future_def:
+                try:
+                    st.session_state[def_key] = future_def.result()
+                except Exception as e:
+                    st.session_state[def_key] = f"Error: {str(e)}"
+
+            if future_img:
+                try:
+                    new_paths = future_img.result()
+                    if new_paths:
+                        # Force the async result into a comma-separated string
+                        if isinstance(new_paths, list):
+                            st.session_state[img_state_key] = ",".join(new_paths)
+                        else:
+                            st.session_state[img_state_key] = new_paths
+                    else:
+                        st.session_state[img_state_key] = "NOT_FOUND"
+                except Exception:
+                    st.session_state[img_state_key] = "NOT_FOUND"
+
+                st.session_state[f"is_regen_{t_id}"] = False
+
+        finally:
+            # wait=False strictly guarantees Streamlit UI reruns safely when the user interrupts by navigating
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        st.rerun()
 
 
 def trigger_study_dialog(term_list, db, tts, llm):
@@ -361,11 +441,14 @@ def trigger_study_dialog(term_list, db, tts, llm):
         term_word = current_term['word']
 
         if st.session_state.get("current_viewed_term_id") != term_id:
+            old_term_id = st.session_state.get("current_viewed_term_id")
             st.session_state["current_viewed_term_id"] = term_id
-            keys_to_clear = [f"img_paths_{term_id}", f"is_regen_{term_id}"]
-            for k in keys_to_clear:
-                if k in st.session_state:
-                    del st.session_state[k]
+
+            if old_term_id is not None:
+                keys_to_clear = [f"img_paths_{old_term_id}", f"is_regen_{old_term_id}"]
+                for k in keys_to_clear:
+                    if k in st.session_state:
+                        del st.session_state[k]
 
         col_header, col_nav = st.columns([2, 1])
 

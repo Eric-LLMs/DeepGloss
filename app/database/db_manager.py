@@ -15,9 +15,14 @@ class DBManager:
             DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
         # Connect to SQLite
-        self.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        # FIX 1: Set timeout=30.0 so Streamlit waits for external software to release the lock instead of crashing instantly.
+        self.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+
+        # FIX 2: Enable WAL (Write-Ahead Logging) mode.
+        # This allows simultaneous readers and writers, permanently solving "database is locked".
+        self.conn.execute("PRAGMA journal_mode=WAL")
 
         # Initialize schema
         self._execute_schema_script()
@@ -142,6 +147,7 @@ class DBManager:
         if audio_path is not None:
             self.conn.execute("UPDATE sentences SET audio_hash=? WHERE id=?", (audio_path, sent_id))
         if cn_explanation is not None:
+            print(sent_id)
             self.conn.execute("UPDATE sentences SET cn_explanation=? WHERE id=?", (cn_explanation, sent_id))
         self.conn.commit()
 
