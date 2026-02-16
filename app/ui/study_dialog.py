@@ -177,9 +177,35 @@ def render_detail_body(term_data, db, tts, llm):
     for i, sent in enumerate(final_sents):
         s_dict = dict(sent)
         s_id = s_dict['id']
+        content_en = s_dict.get('content_en', '')
 
+        # ==========================================
+        # 🌟 LOGIC ENHANCEMENT: Bridge VectorDB and SQLite
+        # If the matched sentence is solely from VectorDB,
+        # check if it already exists in the local SQLite DB.
+        # ==========================================
+        if str(s_id).startswith("vdb_"):
+            # Query SQLite using the exact English content
+            existing_row = db.conn.execute(
+                "SELECT * FROM sentences WHERE content_en = ?",
+                (content_en,)
+            ).fetchone()
+
+            if existing_row:
+                # If found, inherit all existing data (audio, translation, AI explanation)
+                sql_dict = dict(existing_row)
+                s_dict.update(sql_dict)
+                s_id = sql_dict['id']  # Replace virtual 'vdb_' ID with the actual SQLite ID
+
+                # Field mapping: ensure audio_path populates the expected UI variable
+                if 'audio_path' in sql_dict and sql_dict['audio_path']:
+                    s_dict['audio_hash'] = sql_dict['audio_path']
+
+        # Recalculate match status flags based on the potentially updated ID
         is_vdb_only = str(s_id).startswith("vdb_")
-        is_linked = s_id in [s['id'] for s in linked_sents]
+
+        # Safely evaluate linked status (handle potential NoneType for linked_sents)
+        is_linked = s_id in [s['id'] for s in (linked_sents or [])]
 
         with st.container(border=True):
             if is_vdb_only:
@@ -187,6 +213,8 @@ def render_detail_body(term_data, db, tts, llm):
             elif is_linked:
                 st.caption("✓ Linked Match")
             else:
+                # 💡 If the bridge logic above is triggered,
+                # this correctly flags it as an existing but unlinked SQLite match.
                 st.caption("? SQLite Match")
 
             st.markdown(f"**{s_dict['content_en']}**")
