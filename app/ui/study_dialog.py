@@ -314,11 +314,16 @@ def render_detail_body(term_data, db, tts, llm):
                             db.conn.execute("SELECT id FROM sentences WHERE content_en = ?", (content_en,)).fetchone()[
                                 'id']
 
-                if user_cn or user_audio or user_expl:
-                    db.update_sentence_info(real_s_id, content_cn=user_cn, audio_path=user_audio,
-                                            cn_explanation=user_expl)
+                # Update shared sentence attributes in the sentences table
+                if user_cn or user_audio:
+                    db.update_sentence_info(
+                        real_s_id,
+                        content_cn=user_cn,
+                        audio_path=user_audio
+                    )
 
-                db.add_match(t_id, real_s_id)
+                # Save the term-specific AI explanation exclusively to the matches table
+                db.add_match(t_id, real_s_id, cn_explanation=user_expl)
 
             st.toast("Saved successfully! Data is now linked.", icon="✅")
             # Force UI to refresh instantly to show the new "✓ Linked Match" status

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     term_id INTEGER,
     sentence_id INTEGER,
+    cn_explanation TEXT,
     FOREIGN KEY(term_id) REFERENCES terms(id) ON DELETE CASCADE,
     FOREIGN KEY(sentence_id) REFERENCES sentences(id) ON DELETE CASCADE
 );

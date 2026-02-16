@@ -141,15 +141,23 @@ class DBManager:
     def get_sentences_by_domain(self, domain_id):
         return self.conn.execute("SELECT * FROM sentences WHERE domain_id=?", (domain_id,)).fetchall()
 
-    def update_sentence_info(self, sent_id, content_cn=None, audio_path=None, cn_explanation=None):
+    def update_sentence_info(self, sentence_id, content_cn=None, audio_path=None):
+        updates = []
+        params = []
+
+        # Update shared sentence attributes (translation and audio)
         if content_cn is not None:
-            self.conn.execute("UPDATE sentences SET content_cn=? WHERE id=?", (content_cn, sent_id))
+            updates.append("content_cn = ?")
+            params.append(content_cn)
         if audio_path is not None:
-            self.conn.execute("UPDATE sentences SET audio_hash=? WHERE id=?", (audio_path, sent_id))
-        if cn_explanation is not None:
-            print(sent_id)
-            self.conn.execute("UPDATE sentences SET cn_explanation=? WHERE id=?", (cn_explanation, sent_id))
-        self.conn.commit()
+            updates.append("audio_path = ?")
+            params.append(audio_path)
+
+        if updates:
+            query = f"UPDATE sentences SET {', '.join(updates)} WHERE id = ?"
+            params.append(sentence_id)
+            self.conn.execute(query, tuple(params))
+            self.conn.commit()
 
     # ==========================================
     # 4. Search & Matches (Hybrid Logic)
@@ -196,29 +204,35 @@ class DBManager:
 
         return candidates
 
-    def add_match(self, term_id, sentence_id):
-        """
-        Links a term to a sentence.
-        Fix: Checks for existence first to prevent duplicate rows.
-        """
-        # 1. Check if the link already exists
-        check_sql = "SELECT id FROM matches WHERE term_id = ? AND sentence_id = ?"
-        existing = self.conn.execute(check_sql, (term_id, sentence_id)).fetchone()
+    def add_match(self, term_id, sentence_id, cn_explanation=None):
+        # Check if the relationship already exists
+        existing = self.conn.execute(
+            "SELECT 1 FROM matches WHERE term_id = ? AND sentence_id = ?",
+            (term_id, sentence_id)
+        ).fetchone()
 
         if existing:
-            return  # Skip insertion if already linked
-
-        # 2. Insert if not found
-        try:
-            self.conn.execute("INSERT INTO matches (term_id, sentence_id) VALUES (?, ?)", (term_id, sentence_id))
-            self.conn.commit()
-        except sqlite3.IntegrityError:
-            pass
+            # Update the specific explanation if the match already exists
+            if cn_explanation is not None:
+                self.conn.execute(
+                    "UPDATE matches SET cn_explanation = ? WHERE term_id = ? AND sentence_id = ?",
+                    (cn_explanation, term_id, sentence_id)
+                )
+        else:
+            # Insert a new match relationship along with the term-specific explanation
+            self.conn.execute(
+                "INSERT INTO matches (term_id, sentence_id, cn_explanation) VALUES (?, ?, ?)",
+                (term_id, sentence_id, cn_explanation)
+            )
+        self.conn.commit()
 
     def get_matches_for_term(self, term_id):
+        # Use s.* to dynamically fetch all existing columns in the sentences table
+        # to prevent 'no such column' errors, while joining the cn_explanation from matches.
         sql = """
-            SELECT s.* FROM sentences s
-            JOIN matches m ON s.id = m.sentence_id
+            SELECT s.*, m.cn_explanation 
+            FROM matches m 
+            JOIN sentences s ON m.sentence_id = s.id 
             WHERE m.term_id = ?
         """
         return self.conn.execute(sql, (term_id,)).fetchall()
