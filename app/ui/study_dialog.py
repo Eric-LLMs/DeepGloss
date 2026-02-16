@@ -88,18 +88,57 @@ def render_detail_body(term_data, db, tts, llm):
     with col_t2:
         st.markdown("**Definition**")
         def_key = f"term_def_input_{t_id}"
+        temp_def_key = f"temp_def_new_{t_id}"
 
-        def_placeholder = st.empty()
-        needs_def = False
+        needs_def = False  # 彻底关闭底部极易卡死的旧版后台隐式请求
 
+        # ==========================================
+        # 1. 核心修复：处理手动按钮生成的临时状态
+        # ==========================================
+        if temp_def_key in st.session_state:
+            st.session_state[def_key] = st.session_state[temp_def_key]
+            del st.session_state[temp_def_key]
+
+        # ==========================================
+        # 2. 自动获取逻辑 (安全平滑模式，带独立加载动画)
+        # ==========================================
         if def_key not in st.session_state:
             if not term_dict['definition']:
-                needs_def = True
+                # 如果没释义，直接在这里触发自动获取，绝不卡死下半截UI
+                with st.spinner("🤖 Auto-fetching definition..."):
+                    try:
+                        prompt = f"Provide a clear, concise English definition and its Chinese translation for the term '{word}'."
+                        new_def = llm.get_completion(prompt, system_prompt="You are a helpful dictionary assistant. Output only the definition.")
+                        st.session_state[def_key] = new_def or ""
+                    except Exception as e:
+                        st.session_state[def_key] = f"Error: {str(e)}"
             else:
                 st.session_state[def_key] = term_dict['definition']
 
-        if not needs_def:
-            def_placeholder.text_area("Definition", key=def_key, label_visibility="collapsed", height=130)
+        # ==========================================
+        # 3. 渲染输入框
+        # ==========================================
+        st.text_area(
+            "Definition",
+            value=st.session_state.get(def_key, ""),
+            key=def_key,
+            label_visibility="collapsed",
+            height=130
+        )
+
+        # ==========================================
+        # 4. 手动生成按钮 (备用兜底)
+        # ==========================================
+        if st.button("✨ Gen Definition", key=f"btn_gen_def_{t_id}", use_container_width=True):
+            with st.spinner("Generating definition via AI..."):
+                try:
+                    prompt = f"Provide a clear, concise English definition and its Chinese translation for the term '{word}'."
+                    new_def = llm.get_completion(prompt, system_prompt="You are a helpful dictionary assistant. Output only the definition.")
+                    if new_def:
+                        st.session_state[temp_def_key] = new_def
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Generation failed: {e}")
 
         google_img_url = "https://www.google.com/search?tbm=isch&q=" + urllib.parse.quote(word)
         st.markdown(f"↳ [🔍 Search Images on Google]({google_img_url})")
@@ -348,7 +387,10 @@ def render_detail_body(term_data, db, tts, llm):
                             abs_p = get_safe_abs_path(p)
                             if abs_p and os.path.exists(abs_p):
                                 with img_cols[i]:
-                                    st.image(abs_p, use_container_width=True)
+                                    try:
+                                        st.image(abs_p, use_container_width=True)
+                                    except Exception:
+                                        st.error("🖼️ Image load error")  # 如果图片损坏，显示错误提示而不是让整个页面崩溃
             elif state == "NOT_FOUND":
                 img_display_area.warning(
                     "⚠️ Could not fetch images automatically. Please check your network or try Regenerate.")
