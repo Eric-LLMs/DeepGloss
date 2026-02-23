@@ -256,16 +256,33 @@ def render_detail_body(term_data, db, tts, llm):
                     saved_expl = s_dict.get("cn_explanation")
                     if saved_expl: st.session_state[msg_key] = saved_expl
 
-                st.text_area("Translation", key=input_key, height=200, label_visibility="collapsed",
-                             placeholder="Enter translation here...")
+                # --- 核心改动：将 Preview 放在第一个，实现默认显示 ---
+                tab_preview, tab_edit = st.tabs(["👁️ Preview", "✏️ Edit Source"])
 
+                with tab_preview:
+                    # 使用容器并设置高度，防止内容过长导致页面大幅跳动
+                    with st.container(height=180, border=True):
+                        content = st.session_state.get(input_key, "")
+                        if content:
+                            st.markdown(content)
+                        else:
+                            st.caption("No content to preview. Use 'AI Explain' or 'Edit' to add text.")
+
+                with tab_edit:
+                    # 编辑框，方便手动微调 Markdown 源码
+                    st.text_area("Edit Content", key=input_key, height=180, label_visibility="collapsed",
+                                 placeholder="Markdown source code here...")
+
+                # AI 按钮逻辑
                 st.button("✨ AI Explain", key=f"s_ai_{s_id}", on_click=ai_parse_callback,
                           args=(word, s_dict['content_en'], input_key, llm))
 
+                # 显示状态信息
                 if f"msg_{input_key}" in st.session_state:
                     st.success(f"💡 {st.session_state[f'msg_{input_key}']}")
                 if f"err_{input_key}" in st.session_state:
                     st.error(st.session_state[f"err_{input_key}"])
+
 
     st.divider()
 
