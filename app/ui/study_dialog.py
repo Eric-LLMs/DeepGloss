@@ -248,13 +248,27 @@ def render_detail_body(term_data, db, tts, llm):
 
             with sc2:
                 input_key = f"s_cn_input_{s_id}"
-                temp_syntax_key = f"temp_syntax_{s_id}"
+                draft_key = f"draft_{s_id}"
+                show_draft_key = f"show_draft_{s_id}"
+                apply_draft_key = f"apply_draft_{s_id}"
 
-                # Fix: Transfer temp state to widget state BEFORE widget instantiation to avoid StreamlitAPIException
-                if temp_syntax_key in st.session_state:
-                    st.session_state[input_key] = st.session_state[temp_syntax_key]
-                    del st.session_state[temp_syntax_key]
+                # --- 1. State Sync (Must happen before widgets are instantiated to prevent StreamlitAPIException) ---
+                # Check if user clicked "Copy to Edit" in the draft box
+                if apply_draft_key in st.session_state and st.session_state[apply_draft_key]:
+                    existing_text = st.session_state.get(input_key, "")
+                    draft_text = st.session_state.get(draft_key, "")
 
+                    # Append draft to existing content instead of overwriting
+                    if existing_text.strip():
+                        st.session_state[input_key] = existing_text + "\n\n" + draft_text
+                    else:
+                        st.session_state[input_key] = draft_text
+
+                    # Hide draft box after applying
+                    st.session_state[show_draft_key] = False
+                    del st.session_state[apply_draft_key]
+
+                # Initialize main user input state
                 if input_key not in st.session_state:
                     st.session_state[input_key] = s_dict.get('content_cn', '') if s_dict.get('content_cn') else ""
 
@@ -263,11 +277,10 @@ def render_detail_body(term_data, db, tts, llm):
                     saved_expl = s_dict.get("cn_explanation")
                     if saved_expl: st.session_state[msg_key] = saved_expl
 
-                # --- Preview and Edit Tabs ---
+                # --- 2. Main User Area (Preview and Edit Tabs) ---
                 tab_preview, tab_edit = st.tabs(["👁️ Preview", "✏️ Edit Source"])
 
                 with tab_preview:
-                    # Use a container with fixed height to prevent UI jumping during streaming
                     with st.container(height=220, border=True):
                         preview_ph = st.empty()
                         content = st.session_state.get(input_key, "")
@@ -279,69 +292,96 @@ def render_detail_body(term_data, db, tts, llm):
 
                 with tab_edit:
                     st.text_area("Edit Content", key=input_key, height=220, label_visibility="collapsed",
-                                 placeholder="Markdown source code here...")
+                                 placeholder="Markdown source code here... (Your notes are safe here)")
 
-                # --- AI Action Buttons ---
+                # --- 3. AI Action Buttons ---
                 btn_c1, btn_c2 = st.columns(2)
-                with btn_c1:
-                    st.button("✨ AI Explain", key=f"s_ai_{s_id}", on_click=ai_parse_callback,
-                              args=(word, s_dict['content_en'], input_key, llm), use_container_width=True)
-                with btn_c2:
-                    # Translated button text to English
-                    analyze_clicked = st.button("📜 Syntax Analysis", key=f"s_syntax_{s_id}",
+                # Removed on_click to handle generation locally and route output to the Draft Box
+                explain_clicked = btn_c1.button("✨ AI Explain", key=f"s_ai_{s_id}", use_container_width=True)
+                analyze_clicked = btn_c2.button("📜 Syntax Analysis", key=f"s_syntax_{s_id}",
                                                 use_container_width=True)
 
-                # --- Syntax Analysis Streaming Logic ---
-                if analyze_clicked:
-                    prompt = f"""
-                                Please perform a professional syntactic and semantic analysis for the following sentence, specifically tailored for an industry/technical context.
-                                Sentence: "{s_dict['content_en']}"
+                # --- 4. AI Draft Box (Temporary Suggestion Area) ---
+                if explain_clicked or analyze_clicked or st.session_state.get(show_draft_key, False):
+                    st.session_state[show_draft_key] = True
 
-                                You MUST format your response EXACTLY following this Markdown template (Do not output markdown codeblock backticks ```):
+                    with st.container(border=True):
+                        st.markdown("##### 🤖 AI Suggestion (Draft)")
+                        draft_ph = st.empty()
 
-                                ### 📖 句子意译
-                                (Provide a clear, fluent, and professional Chinese translation here)
+                        # Generate content if a button was just clicked
+                        if explain_clicked:
+                            with st.spinner("Analyzing context..."):
+                                enhanced_context = f"{s_dict['content_en']}\n\n(Instruction: You MUST provide the explanation of the term in BOTH English and Chinese.)"
+                                try:
+                                    res = llm.explain_term_in_context(word, enhanced_context)
+                                    if isinstance(res, dict) and 'translation' in res:
+                                        st.session_state[draft_key] = res['translation']
+                                        st.session_state[msg_key] = res['explanation']
+                                except Exception as e:
+                                    st.error(f"AI Explain failed: {e}")
 
-                                ### 🔍 句法结构
-                                * **主干结构**: (Extract the core Subject-Verb-Object)
-                                * **深度解析**: (Explain clauses, modifiers, long dependencies, or specific grammatical structures clearly)
+                        elif analyze_clicked:
+                            prompt = f"""
+                                    Please perform a professional syntactic and semantic analysis for the following sentence, specifically tailored for an industry/technical context.
+                                    Sentence: "{s_dict['content_en']}"
 
-                                ### 🔑 行业核心词汇与词组
-                                * **[Key Term 1]**: (Explain its specific meaning and role in this technical context)
-                                * **[Key Term 2]**: (Explain its specific meaning and role in this technical context)
-                                                    """
+                                    You MUST format your response EXACTLY following this Markdown template (Do not output markdown codeblock backticks ```):
 
-                    try:
-                        response = llm.get_completion(prompt,
-                                                      system_prompt="You are an expert English linguist and tech-domain specialist.",
-                                                      stream=True)
+                                    ### 📖 句子意译
+                                    (Provide a clear, fluent, and professional Chinese translation here)
 
-                        if isinstance(response, str):
-                            # Assign to temp state instead of widget state
-                            st.session_state[temp_syntax_key] = response
-                        else:
-                            preview_ph.empty()
-                            with preview_ph.container():
-                                full_text = st.write_stream(response)
-                            # Fix: Assign to temp state instead of widget state to prevent StreamlitAPIException
-                            st.session_state[temp_syntax_key] = full_text
+                                    ### 🔍 句法结构
+                                    * **主干结构**: (Extract the core Subject-Verb-Object)
+                                    * **深度解析**: (Explain clauses, modifiers, long dependencies, or specific grammatical structures clearly)
 
-                        st.rerun()
+                                    ### 🔑 行业核心词汇与词组
+                                    * **[Key Term 1]**: (Explain its specific meaning and role in this technical context)
+                                    * **[Key Term 2]**: (Explain its specific meaning and role in this technical context)
+                                                        """
+                            try:
+                                response = llm.get_completion(prompt,
+                                                              system_prompt="You are an expert English linguist and tech-domain specialist.",
+                                                              stream=True)
 
-                    except TypeError:
-                        response = llm.get_completion(prompt,
-                                                      system_prompt="You are an expert English linguist and tech-domain specialist.")
-                        st.session_state[temp_syntax_key] = response
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Syntax analysis failed: {e}")
+                                if isinstance(response, str):
+                                    st.session_state[draft_key] = response
+                                else:
+                                    draft_ph.empty()
+                                    with draft_ph.container():
+                                        full_text = st.write_stream(response)
+                                    st.session_state[draft_key] = full_text
 
-                # --- Status Messages ---
-                if f"msg_{input_key}" in st.session_state:
-                    st.success(f"💡 {st.session_state[f'msg_{input_key}']}")
+                            except TypeError:
+                                response = llm.get_completion(prompt,
+                                                              system_prompt="You are an expert English linguist and tech-domain specialist.")
+                                st.session_state[draft_key] = response
+                            except Exception as e:
+                                st.error(f"Syntax analysis failed: {e}")
+
+                        # Display the generated draft content
+                        draft_content = st.session_state.get(draft_key, "")
+                        if not analyze_clicked:  # If analyze_clicked, it was already streamed into draft_ph
+                            draft_ph.markdown(draft_content)
+
+                        # Draft Box Action Buttons
+                        draft_b1, draft_b2 = st.columns(2)
+
+                        if draft_b1.button("📝 Copy to Edit", key=f"d_copy_{s_id}", use_container_width=True):
+                            # Trigger the append logic at the top of the script on rerun
+                            st.session_state[apply_draft_key] = True
+                            st.rerun()
+
+                        if draft_b2.button("✖ Close", key=f"d_close_{s_id}", use_container_width=True):
+                            st.session_state[show_draft_key] = False
+                            st.session_state[draft_key] = ""
+                            st.rerun()
+
+                # --- 5. Status Messages ---
+                if msg_key in st.session_state and st.session_state[msg_key]:
+                    st.success(f"💡 {st.session_state[msg_key]}")
                 if f"err_{input_key}" in st.session_state:
                     st.error(st.session_state[f"err_{input_key}"])
-
     st.divider()
 
     col_btn1, col_btn2 = st.columns(2)

@@ -206,6 +206,13 @@ class DBManager:
         return candidates
 
     def add_match(self, term_id, sentence_id, cn_explanation=None):
+        # Cast inputs to native Python types to prevent sqlite3.InterfaceError
+        # (e.g., when passing dictionaries from LLM or numpy integers from dataframes)
+        term_id = int(term_id)
+        sentence_id = int(sentence_id)
+        if cn_explanation is not None:
+            cn_explanation = str(cn_explanation)
+
         # Check if the relationship already exists
         existing = self.conn.execute(
             "SELECT 1 FROM matches WHERE term_id = ? AND sentence_id = ?",
