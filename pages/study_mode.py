@@ -237,12 +237,15 @@ with pc2:
             st.session_state.current_page = st.session_state.jump_input
 
 
+        # Sync the widget's session state key with the current page before rendering
+        # This ensures the input box updates when Prev/Next buttons are clicked
+        st.session_state.jump_input = st.session_state.current_page
+
         st.number_input(
             "Jump",
             min_value=1,
             max_value=max(1, total_pages),
-            value=st.session_state.current_page,
-            key="jump_input",
+            key="jump_input",  # Removed value parameter to prevent Streamlit state conflict
             label_visibility="collapsed",
             on_change=on_page_jump
         )
