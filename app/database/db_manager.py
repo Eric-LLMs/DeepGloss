@@ -150,7 +150,8 @@ class DBManager:
             updates.append("content_cn = ?")
             params.append(content_cn)
         if audio_path is not None:
-            updates.append("audio_path = ?")
+            # Fix: Map to the correct database column name 'audio_hash' instead of 'audio_path'
+            updates.append("audio_hash = ?")
             params.append(audio_path)
 
         if updates:
