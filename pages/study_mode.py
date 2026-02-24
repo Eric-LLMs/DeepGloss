@@ -205,18 +205,57 @@ for i, t_dict in enumerate(paginated_terms):
 # ==========================================
 # 8. Pagination Controls
 # ==========================================
+# 注入一段针对翻页组件的微调 CSS：将数字居中并加粗
+st.markdown("""
+    <style>
+    div[data-testid="stNumberInput"] input {
+        text-align: center;
+        font-weight: 600;
+        color: #1f2937;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.write("")
 pc1, pc2, pc3 = st.columns([1, 2, 1])
 
 with pc1:
     st.button("⬅️ Prev", on_click=prev_page, disabled=(st.session_state.current_page == 1), use_container_width=True)
+
 with pc2:
-    st.markdown(
-        f"<div style='text-align: center; color: #4b5563; margin-top: 8px;'>Page <b>{st.session_state.current_page}</b> of <b>{total_pages}</b> &nbsp;|&nbsp; Total: {total_items} terms</div>",
-        unsafe_allow_html=True)
+    # 调整比例：压榨输入框的宽度 (0.8)，并使用 gap="small" 让文字贴紧输入框
+    jump_c1, jump_c2, jump_c3 = st.columns([1.2, 0.8, 1.5], gap="small")
+
+    with jump_c1:
+        # 使用 padding-top (约7px) 实现与右侧输入框的完美垂直居中
+        st.markdown(
+            "<div style='text-align: right; padding-top: 7px; color: #4b5563; font-size: 15px; font-weight: 500;'>Page</div>",
+            unsafe_allow_html=True)
+
+    with jump_c2:
+        def on_page_jump():
+            st.session_state.current_page = st.session_state.jump_input
+
+
+        st.number_input(
+            "Jump",
+            min_value=1,
+            max_value=max(1, total_pages),
+            value=st.session_state.current_page,
+            key="jump_input",
+            label_visibility="collapsed",
+            on_change=on_page_jump
+        )
+
+    with jump_c3:
+        # 优化排版风格，使用浅色竖线分隔符号
+        st.markdown(
+            f"<div style='padding-top: 7px; color: #4b5563; font-size: 15px;'><span style='font-weight: 500;'>of {total_pages}</span> &nbsp;<span style='color: #d1d5db;'>|</span>&nbsp; {total_items} terms</div>",
+            unsafe_allow_html=True)
+
 with pc3:
-    st.button("Next ➡️", on_click=next_page, args=(total_pages,),
-              disabled=(st.session_state.current_page == total_pages), use_container_width=True)
+    st.button("Next ➡️", on_click=next_page, args=(total_pages,), disabled=(st.session_state.current_page >= total_pages), use_container_width=True)
+
 
 # ==========================================
 # 9. Dialog Handler
