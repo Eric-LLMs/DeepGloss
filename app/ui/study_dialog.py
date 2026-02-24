@@ -248,6 +248,13 @@ def render_detail_body(term_data, db, tts, llm):
 
             with sc2:
                 input_key = f"s_cn_input_{s_id}"
+                temp_syntax_key = f"temp_syntax_{s_id}"
+
+                # Fix: Transfer temp state to widget state BEFORE widget instantiation to avoid StreamlitAPIException
+                if temp_syntax_key in st.session_state:
+                    st.session_state[input_key] = st.session_state[temp_syntax_key]
+                    del st.session_state[temp_syntax_key]
+
                 if input_key not in st.session_state:
                     st.session_state[input_key] = s_dict.get('content_cn', '') if s_dict.get('content_cn') else ""
 
@@ -256,33 +263,84 @@ def render_detail_body(term_data, db, tts, llm):
                     saved_expl = s_dict.get("cn_explanation")
                     if saved_expl: st.session_state[msg_key] = saved_expl
 
-                # --- 核心改动：将 Preview 放在第一个，实现默认显示 ---
+                # --- Preview and Edit Tabs ---
                 tab_preview, tab_edit = st.tabs(["👁️ Preview", "✏️ Edit Source"])
 
                 with tab_preview:
-                    # 使用容器并设置高度，防止内容过长导致页面大幅跳动
-                    with st.container(height=180, border=True):
+                    # Use a container with fixed height to prevent UI jumping during streaming
+                    with st.container(height=220, border=True):
+                        preview_ph = st.empty()
                         content = st.session_state.get(input_key, "")
                         if content:
-                            st.markdown(content)
+                            preview_ph.markdown(content)
                         else:
-                            st.caption("No content to preview. Use 'AI Explain' or 'Edit' to add text.")
+                            preview_ph.caption(
+                                "No content to preview. Use 'AI Explain', 'Syntax Analysis' or 'Edit' to add text.")
 
                 with tab_edit:
-                    # 编辑框，方便手动微调 Markdown 源码
-                    st.text_area("Edit Content", key=input_key, height=180, label_visibility="collapsed",
+                    st.text_area("Edit Content", key=input_key, height=220, label_visibility="collapsed",
                                  placeholder="Markdown source code here...")
 
-                # AI 按钮逻辑
-                st.button("✨ AI Explain", key=f"s_ai_{s_id}", on_click=ai_parse_callback,
-                          args=(word, s_dict['content_en'], input_key, llm))
+                # --- AI Action Buttons ---
+                btn_c1, btn_c2 = st.columns(2)
+                with btn_c1:
+                    st.button("✨ AI Explain", key=f"s_ai_{s_id}", on_click=ai_parse_callback,
+                              args=(word, s_dict['content_en'], input_key, llm), use_container_width=True)
+                with btn_c2:
+                    # Translated button text to English
+                    analyze_clicked = st.button("📜 Syntax Analysis", key=f"s_syntax_{s_id}",
+                                                use_container_width=True)
 
-                # 显示状态信息
+                # --- Syntax Analysis Streaming Logic ---
+                if analyze_clicked:
+                    prompt = f"""
+                                Please perform a professional syntactic and semantic analysis for the following sentence, specifically tailored for an industry/technical context.
+                                Sentence: "{s_dict['content_en']}"
+
+                                You MUST format your response EXACTLY following this Markdown template (Do not output markdown codeblock backticks ```):
+
+                                ### 📖 句子意译
+                                (Provide a clear, fluent, and professional Chinese translation here)
+
+                                ### 🔍 句法结构
+                                * **主干结构**: (Extract the core Subject-Verb-Object)
+                                * **深度解析**: (Explain clauses, modifiers, long dependencies, or specific grammatical structures clearly)
+
+                                ### 🔑 行业核心词汇与词组
+                                * **[Key Term 1]**: (Explain its specific meaning and role in this technical context)
+                                * **[Key Term 2]**: (Explain its specific meaning and role in this technical context)
+                                                    """
+
+                    try:
+                        response = llm.get_completion(prompt,
+                                                      system_prompt="You are an expert English linguist and tech-domain specialist.",
+                                                      stream=True)
+
+                        if isinstance(response, str):
+                            # Assign to temp state instead of widget state
+                            st.session_state[temp_syntax_key] = response
+                        else:
+                            preview_ph.empty()
+                            with preview_ph.container():
+                                full_text = st.write_stream(response)
+                            # Fix: Assign to temp state instead of widget state to prevent StreamlitAPIException
+                            st.session_state[temp_syntax_key] = full_text
+
+                        st.rerun()
+
+                    except TypeError:
+                        response = llm.get_completion(prompt,
+                                                      system_prompt="You are an expert English linguist and tech-domain specialist.")
+                        st.session_state[temp_syntax_key] = response
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Syntax analysis failed: {e}")
+
+                # --- Status Messages ---
                 if f"msg_{input_key}" in st.session_state:
                     st.success(f"💡 {st.session_state[f'msg_{input_key}']}")
                 if f"err_{input_key}" in st.session_state:
                     st.error(st.session_state[f"err_{input_key}"])
-
 
     st.divider()
 
