@@ -18,7 +18,7 @@ llm = LLMClient()
 
 # --- Session State Initialization ---
 if 'sort_col' not in st.session_state:
-    st.session_state.sort_col = 'level'  # Default sort by Level
+    st.session_state.sort_col = 'freq'  # Default sort by Frequency
 if 'sort_asc' not in st.session_state:
     st.session_state.sort_asc = False  # Default Descending (High to Low)
 if 'current_page' not in st.session_state:
