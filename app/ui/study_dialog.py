@@ -33,12 +33,25 @@ def _on_study_dialog_dismiss():
     if "current_viewed_term_id" in st.session_state:
         del st.session_state["current_viewed_term_id"]
 
-    # Clear temporary unsaved audio states to prevent them from persisting
-    # when reopening the same card without saving.
-    keys_to_clear = [k for k in st.session_state.keys() if
-                     k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
-    for k in keys_to_clear:
+    # Remove physically unsaved audio files from the local disk
+    audio_keys = [k for k in st.session_state.keys() if k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+    for k in audio_keys:
+        new_path = st.session_state[k]
+        old_k = k.replace("new_", "old_")
+        old_path = st.session_state.get(old_k)
+
+        # Only delete the physical file if it is different from the one in the database
+        if new_path and new_path != old_path:
+            abs_path = get_safe_abs_path(new_path)
+            if abs_path and os.path.exists(abs_path):
+                try:
+                    os.remove(abs_path)
+                except Exception:
+                    pass
+
         del st.session_state[k]
+        if old_k in st.session_state:
+            del st.session_state[old_k]
 
 
 def ai_parse_callback(word, context, target_key, llm):
@@ -90,6 +103,8 @@ def render_detail_body(term_data, db, tts, llm):
                 if path:
                     rel_path = get_rel_path(path)
                     st.session_state[f"new_audio_{t_id}"] = rel_path
+                    # Record the original DB path to prevent accidentally deleting it later
+                    st.session_state[f"old_audio_{t_id}"] = term_dict.get('audio_hash')
                     term_audio_ph.audio(path)
 
     with col_t2:
@@ -248,6 +263,8 @@ def render_detail_body(term_data, db, tts, llm):
                         if path:
                             rel_path = get_rel_path(path)
                             st.session_state[f"new_sent_audio_{s_id}"] = rel_path
+                            # Record the original DB path for the sentence
+                            st.session_state[f"old_sent_audio_{s_id}"] = s_dict.get('audio_hash')
                             sent_audio_ph.audio(path)
 
                 st.write("")
@@ -447,6 +464,16 @@ def render_detail_body(term_data, db, tts, llm):
                 # Save the term-specific AI explanation exclusively to the matches table
                 db.add_match(t_id, real_s_id, cn_explanation=user_expl)
 
+                # Clear temporary states so they are marked as officially "saved".
+                # This prevents the cleanup routine from deleting the files we just saved.
+            audio_keys = [k for k in st.session_state.keys() if
+                          k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+            for k in audio_keys:
+                old_k = k.replace("new_", "old_")
+                del st.session_state[k]
+                if old_k in st.session_state:
+                    del st.session_state[old_k]
+
             st.toast("Saved successfully! Data is now linked.", icon="✅")
             # Force UI to refresh instantly to show the new "✓ Linked Match" status
             st.rerun()
@@ -456,14 +483,27 @@ def render_detail_body(term_data, db, tts, llm):
             if 'active_study_index' in st.session_state:
                 del st.session_state.active_study_index
 
-            # Clear temporary unsaved audio states
-            keys_to_clear = [k for k in st.session_state.keys() if
-                             k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
-            for k in keys_to_clear:
+            # Remove physically unsaved audio files from the local disk
+            audio_keys = [k for k in st.session_state.keys() if
+                          k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+            for k in audio_keys:
+                new_path = st.session_state[k]
+                old_k = k.replace("new_", "old_")
+                old_path = st.session_state.get(old_k)
+
+                if new_path and new_path != old_path:
+                    abs_path = get_safe_abs_path(new_path)
+                    if abs_path and os.path.exists(abs_path):
+                        try:
+                            os.remove(abs_path)
+                        except Exception:
+                            pass
+
                 del st.session_state[k]
+                if old_k in st.session_state:
+                    del st.session_state[old_k]
 
             st.rerun()
-
 
     with visual_context_container:
         st.markdown("#### 🖼️ Visual Context")
@@ -654,6 +694,26 @@ def trigger_study_dialog(term_list, db, tts, llm):
                 for k in keys_to_clear:
                     if k in st.session_state:
                         del st.session_state[k]
+
+                # Remove physically unsaved audio files when navigating between cards
+                audio_keys = [k for k in st.session_state.keys() if
+                              k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+                for k in audio_keys:
+                    new_path = st.session_state[k]
+                    old_k = k.replace("new_", "old_")
+                    old_path = st.session_state.get(old_k)
+
+                    if new_path and new_path != old_path:
+                        abs_path = get_safe_abs_path(new_path)
+                        if abs_path and os.path.exists(abs_path):
+                            try:
+                                os.remove(abs_path)
+                            except Exception:
+                                pass
+
+                    del st.session_state[k]
+                    if old_k in st.session_state:
+                        del st.session_state[old_k]
 
         col_header, col_nav = st.columns([2, 1])
 
