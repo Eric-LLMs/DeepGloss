@@ -74,7 +74,7 @@ LLM_MODEL = model_conf.get("llm", "o3-mini")
 TTS_MODEL = model_conf.get("tts", "tts-1-hd")
 TTS_VOICE = model_conf.get("tts_voice", "alloy")
 
-# --- Unified API Configuration ---
+# --- LLM API Configuration ---
 
 # 1. API Key: Priority -> LLM_API_KEY > OPENAI_API_KEY
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -86,3 +86,8 @@ LLM_BASE_URL = (
     or os.getenv("DEEPSEEK_BASE_URL")
     or "https://api.openai.com/v1"
 )
+
+# --- TTS API Configuration ---
+# 独立配置 TTS 的接口和密钥。如果未设置，则默认使用 LLM 的配置
+TTS_API_KEY = os.getenv("TTS_API_KEY") or LLM_API_KEY
+TTS_BASE_URL = os.getenv("TTS_BASE_URL") or LLM_BASE_URL

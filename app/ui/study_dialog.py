@@ -33,6 +33,13 @@ def _on_study_dialog_dismiss():
     if "current_viewed_term_id" in st.session_state:
         del st.session_state["current_viewed_term_id"]
 
+    # Clear temporary unsaved audio states to prevent them from persisting
+    # when reopening the same card without saving.
+    keys_to_clear = [k for k in st.session_state.keys() if
+                     k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+    for k in keys_to_clear:
+        del st.session_state[k]
+
 
 def ai_parse_callback(word, context, target_key, llm):
     """Callback for AI explanation of contextual sentences."""
@@ -448,7 +455,15 @@ def render_detail_body(term_data, db, tts, llm):
         if st.button("✖ Close", use_container_width=True, key=f"modal_close_{t_id}"):
             if 'active_study_index' in st.session_state:
                 del st.session_state.active_study_index
+
+            # Clear temporary unsaved audio states
+            keys_to_clear = [k for k in st.session_state.keys() if
+                             k.startswith("new_audio_") or k.startswith("new_sent_audio_")]
+            for k in keys_to_clear:
+                del st.session_state[k]
+
             st.rerun()
+
 
     with visual_context_container:
         st.markdown("#### 🖼️ Visual Context")
