@@ -14,8 +14,12 @@ storage:
 
 models:
   # LLM model for translation and explanation
-  llm: "o3-mini"
-  # TTS model for audio generation
+  llm: "gpt-5.6-luna"
+  # TTS model for audio generation.
+  # NOTE: TTS now runs locally via Kokoro-82M; this field is ignored.
   tts: "tts-1-hd"
-  # Voice option for TTS (alloy, echo, fable, onyx, nova, shimmer)
-  tts_voice: "alloy"
+  # Kokoro voice (local TTS). Available American English voices include:
+  #   af_heart, af_alloy, af_bella, af_nicole, af_sky (female)
+  #   am_michael, am_adam, am_eric, am_fenrir, am_onyx (male)
+  # British: bf_emma, bf_lily (female) / bm_daniel, bm_fable (male)
+  tts_voice: "am_michael"
