@@ -65,8 +65,8 @@ Toggle terms with smooth blue/gray switches, rate importance with star icons, us
   * **Local Image Caching**: Once saved, images are downloaded directly to your local cache and linked via relative paths in the SQLite database, ensuring zero-latency loads and offline availability for future reviews.
 * **Built-in Mic Widget**: Record your own voice directly in the browser and compare it with the generated TTS audio for pronunciation practice.
 * **Audio & Pronunciation**: 
-  * Generate high-quality TTS audio for words and full sentences on the fly.
-  * **Local Audio Caching**: Generated audio is cached locally (path configurable via `config.yaml`) to save API costs and speed up loading.
+  * Generate high-quality TTS audio for words and full sentences on the fly using a local **Kokoro-82M** model (offline, zero API cost).
+  * **Local Audio Caching**: Generated audio is cached locally as WAV (path configurable via `config.yaml`) for instant replay.
 * **Importance Rating**: Rate terms from 1 to 5 stars (⭐⭐⭐⭐⭐) to prioritize your learning.  
   
 ### 🛠️ Efficient Library Governance
@@ -88,6 +88,7 @@ Toggle terms with smooth blue/gray switches, rate importance with star icons, us
   * **Vector**: [ChromaDB](https://www.trychroma.com/) (Semantic Embeddings)
 * **AI Models**:
   * **LLM**: OpenAI / DeepSeek / Moonshot (via OpenAI-compatible API)
+  * **TTS**: [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (local, offline text-to-speech)
   * **Embedding**: BAAI/bge-m3 (State-of-the-art English/Chinese embedding)
 * **Data Processing**: Pandas, Regex
 * **Web Scraping**: Native `urllib` & `re` (Lightweight Google/Bing Image extraction)
@@ -119,7 +120,7 @@ DeepGloss/
 │       ├── image_scraper.py # Web scraping for contextual images 
 │       └── ...
 ├── data/                # Data Storage
-│   ├── audio_cache/     # MP3 Cache (Auto-generated)
+│   ├── audio_cache/     # WAV Cache (Auto-generated, local Kokoro TTS)
 │   ├── image_cache/     # Downloaded image assets (Auto-generated)
 │   ├── vector_store/    # ChromaDB Files (Auto-generated)
 │   └── deepgloss.db     # SQLite Database File
@@ -200,8 +201,8 @@ storage:
 
 models:
   llm: "o3-mini"      # Model for explanation
-  tts: "tts-1-hd"     # Model for speech
-  tts_voice: "alloy"
+  # TTS now runs locally via Kokoro-82M; select a voice below.
+  tts_voice: "am_michael"  # e.g. af_heart, af_alloy, am_michael, bf_emma
 
 
 ```
@@ -216,7 +217,7 @@ streamlit run main.py
 
 ```
 
-*(Alternatively, simply double-click the start.bat file if you are on Windows.On first run, the system will automatically download the embedding model (~2GB) and initialize databases).*
+*(Alternatively, simply double-click the start.bat file if you are on Windows. On first run, the system will automatically download the embedding model (~2GB) and initialize databases. The first TTS generation will additionally download the Kokoro-82M model (~320MB) and spaCy's en_core_web_sm (~13MB); subsequent generations run fully offline).*
 
 ---
 
